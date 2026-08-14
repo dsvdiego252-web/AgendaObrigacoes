@@ -91,12 +91,17 @@
   main { padding: 14px 16px calc(90px + var(--safe-bottom)); max-width: 640px; margin: 0 auto; }
 
   .summary-row { display: flex; gap: 8px; margin: 6px 0 16px; flex-wrap: wrap; }
-  .summary-pill { font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
+  .summary-pill {
+    font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px;
+    border: 1.5px solid transparent; font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .summary-pill:active { transform: scale(0.96); }
   .summary-pill .n { font-size: 13px; }
   .summary-pill.green { background: var(--green-bg); color: var(--green); }
   .summary-pill.red { background: var(--red-bg); color: var(--red); }
   .summary-pill.orange { background: var(--orange-bg); color: var(--orange); }
   .summary-pill.gray { background: var(--gray-bg); color: var(--gray); }
+  .summary-pill.active { border-color: currentColor; }
 
   .empty-state { text-align: center; padding: 50px 20px; color: var(--text-dim); }
   .empty-state .big { font-size: 40px; margin-bottom: 10px; }
@@ -249,7 +254,8 @@
 <div class="backdrop" id="sheetDeliver">
   <div class="sheet">
     <div class="handle"></div>
-    <h3>Marcar entrega</h3>
+    <h3 id="deliverTitle">Marcar entrega</h3>
+    <div class="hint" id="deliverMonthLabel" style="margin: -6px 0 14px; font-size: 13px;"></div>
     <div class="field">
       <label for="deliverDate">Data em que foi entregue</label>
       <input type="date" id="deliverDate" />
@@ -419,7 +425,8 @@
     data: loadData(),
     prefs: loadPrefs(),
     activeGroupId: null,
-    activeSubgroupId: null
+    activeSubgroupId: null,
+    activeStatusFilter: null
   };
   if (state.data.groups.length) {
     state.activeGroupId = state.data.groups[0].id;
@@ -451,7 +458,7 @@
     on_time: "Entregue no prazo",
     late: "Entregue com atraso",
     overdue: "Atrasada",
-    pending: "No prazo"
+    pending: "Pendente"
   };
   var STATUS_ICON = { on_time: "✅", late: "🟠", overdue: "🔴", pending: "🕒" };
 
@@ -474,6 +481,7 @@
       chip.onclick = function () {
         state.activeGroupId = g.id;
         state.activeSubgroupId = g.subgroups.length ? g.subgroups[0].id : null;
+        state.activeStatusFilter = null;
         render();
       };
       el.appendChild(chip);
@@ -494,7 +502,7 @@
       var chip = document.createElement("button");
       chip.className = "subtab-chip" + (s.id === state.activeSubgroupId ? " active" : "");
       chip.textContent = s.name;
-      chip.onclick = function () { state.activeSubgroupId = s.id; render(); };
+      chip.onclick = function () { state.activeSubgroupId = s.id; state.activeStatusFilter = null; render(); };
       el.appendChild(chip);
     });
     var addChip = document.createElement("button");
@@ -536,18 +544,32 @@
       return a.due - b.due;
     });
 
-    function pill(cls, icon, count, label) {
-      var d = document.createElement("div");
-      d.className = "summary-pill " + cls;
+    function pill(status, cls, icon, count, label) {
+      var d = document.createElement("button");
+      d.type = "button";
+      d.className = "summary-pill " + cls + (state.activeStatusFilter === status ? " active" : "");
       d.innerHTML = icon + ' <span class="n">' + count + "</span> " + label;
+      d.onclick = function () {
+        state.activeStatusFilter = state.activeStatusFilter === status ? null : status;
+        renderSummaryAndList();
+      };
       return d;
     }
-    summaryEl.appendChild(pill("red", "🔴", counts.overdue, "atrasadas"));
-    summaryEl.appendChild(pill("gray", "🕒", counts.pending, "no prazo"));
-    summaryEl.appendChild(pill("orange", "🟠", counts.late, "com atraso"));
-    summaryEl.appendChild(pill("green", "✅", counts.on_time, "entregues"));
+    summaryEl.appendChild(pill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
+    summaryEl.appendChild(pill("pending", "gray", "🕒", counts.pending, "pendentes"));
+    summaryEl.appendChild(pill("late", "orange", "🟠", counts.late, "com atraso"));
+    summaryEl.appendChild(pill("on_time", "green", "✅", counts.on_time, "entregues"));
 
-    withStatus.forEach(function (item) {
+    var visibleItems = state.activeStatusFilter
+      ? withStatus.filter(function (item) { return item.status === state.activeStatusFilter; })
+      : withStatus;
+
+    if (!visibleItems.length) {
+      listEl.innerHTML = '<div class="empty-state"><div class="big">🔎</div>Nenhuma obrigação com status "' + STATUS_LABEL[state.activeStatusFilter] + '" no momento.</div>';
+      return;
+    }
+
+    visibleItems.forEach(function (item) {
       listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
     });
   }
@@ -677,6 +699,8 @@
     deliverCtx.ob = ob; deliverCtx.sub = sub;
     var ck = cycleKeyOf(todayDate());
     var delivery = ob.deliveries[ck];
+    document.getElementById("deliverTitle").textContent = ob.name;
+    document.getElementById("deliverMonthLabel").textContent = "Referente a " + monthLabel(ck) + " · vence dia " + ob.dueDay;
     document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
     document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
     openSheet("sheetDeliver");
