@@ -130,6 +130,12 @@
   .status-badge.status-late { background: var(--orange-bg); color: var(--orange); }
   .status-badge.status-pending { background: var(--gray-bg); color: var(--gray); }
 
+  .missed-warning {
+    display: block; width: 100%; text-align: left; margin-top: 8px; padding: 8px 10px;
+    background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.35); border-radius: 8px;
+    color: var(--orange); font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; line-height: 1.4;
+  }
+
   .ob-actions { display: flex; gap: 8px; margin-top: 11px; flex-wrap: wrap; }
   .btn {
     border: none; border-radius: 9px; padding: 9px 13px; font-size: 13.5px; font-weight: 600; cursor: pointer;
@@ -246,6 +252,7 @@
   .dash-stat.orange { color: var(--orange); }
   .dash-stat.green { color: var(--green); }
   .dash-empty { font-size: 13px; color: var(--text-dim); }
+  .dash-missed-note { font-size: 12px; font-weight: 600; color: var(--orange); }
 </style>
 </head>
 <body>
@@ -404,7 +411,7 @@
   function toISODate(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
 
   function defaultData() {
-    function ob(name, dueDay) { return { id: uid(), name: name, dueDay: dueDay, deliveries: {} }; }
+    function ob(name, dueDay) { return { id: uid(), name: name, dueDay: dueDay, deliveries: {}, createdCk: cycleKeyOf(todayDate()) }; }
     return {
       groups: [
         {
@@ -442,10 +449,25 @@
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) { var d = defaultData(); saveData(d); return d; }
-      return JSON.parse(raw);
+      var parsed = JSON.parse(raw);
+      migrateData(parsed);
+      return parsed;
     } catch (e) {
       var d2 = defaultData(); saveData(d2); return d2;
     }
+  }
+  function migrateData(data) {
+    // Obrigações salvas antes do campo "createdCk" existir não têm como saber
+    // quando foram criadas de verdade; assumimos o mês atual pra não gerar
+    // alertas falsos de "meses anteriores esquecidos" antes de terem existido.
+    var thisCk = cycleKeyOf(todayDate());
+    data.groups.forEach(function (g) {
+      g.subgroups.forEach(function (sg) {
+        sg.obligations.forEach(function (ob) {
+          if (!ob.createdCk) ob.createdCk = thisCk;
+        });
+      });
+    });
   }
   function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 
@@ -495,6 +517,22 @@
       return deliveredDate.getTime() <= due.getTime() ? "on_time" : "late";
     }
     return today.getTime() > due.getTime() ? "overdue" : "pending";
+  }
+
+  // Meses passados (antes do mês atual, desde que a obrigação existe) sem
+  // nenhuma entrega registrada — fica fácil esquecer um mês e nunca mais
+  // reparar, já que o card só mostra o status do mês atual.
+  function getMissedPastCycles(ob, today) {
+    var missed = [];
+    var cursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    for (var i = 0; i < 24; i++) {
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+      var ck = cycleKeyOf(cursor);
+      if (ob.createdCk && ck < ob.createdCk) break;
+      if (!ob.deliveries[ck]) missed.push(ck);
+    }
+    missed.reverse();
+    return missed;
   }
 
   var STATUS_LABEL = {
@@ -572,10 +610,12 @@
     state.data.groups.forEach(function (g) {
       var counts = { overdue: 0, pending: 0, late: 0, on_time: 0 };
       var total = 0;
+      var obligationsWithMissedPast = 0;
       g.subgroups.forEach(function (sg) {
         sg.obligations.forEach(function (ob) {
           counts[getStatus(ob, today)]++;
           total++;
+          if (getMissedPastCycles(ob, today).length) obligationsWithMissedPast++;
         });
       });
       var finished = total > 0 && counts.overdue === 0 && counts.pending === 0;
@@ -637,6 +677,13 @@
         stats.appendChild(stat("🟠", counts.late, "orange"));
         stats.appendChild(stat("✅", counts.on_time, "green"));
         card.appendChild(stats);
+
+        if (obligationsWithMissedPast > 0) {
+          var missedNote = document.createElement("div");
+          missedNote.className = "dash-missed-note";
+          missedNote.textContent = "⚠️ " + obligationsWithMissedPast + " obrigaç" + (obligationsWithMissedPast === 1 ? "ão" : "ões") + " com mês anterior sem registro";
+          card.appendChild(missedNote);
+        }
       }
 
       wrap.appendChild(card);
@@ -787,6 +834,16 @@
     badge.textContent = STATUS_ICON[status] + " " + badgeText;
     card.appendChild(badge);
 
+    var missed = getMissedPastCycles(ob, todayDate());
+    if (missed.length) {
+      var missedWarn = document.createElement("button");
+      missedWarn.type = "button";
+      missedWarn.className = "missed-warning";
+      missedWarn.textContent = "⚠️ " + missedMonthsText(missed) + " (" + missed.map(monthLabel).join(", ") + ")";
+      missedWarn.onclick = function () { openHistorySheet(ob); };
+      card.appendChild(missedWarn);
+    }
+
     var actions = document.createElement("div");
     actions.className = "ob-actions";
     var deliverBtn = document.createElement("button");
@@ -863,7 +920,7 @@
     var dueDay = parseInt(document.getElementById("obDueDay").value, 10);
     if (!name) { showToast("Informe o nome da obrigação"); return; }
     if (!dueDay || dueDay < 1 || dueDay > 31) { showToast("Informe um dia de vencimento válido (1-31)"); return; }
-    sub.obligations.push({ id: uid(), name: name, dueDay: dueDay, deliveries: {} });
+    sub.obligations.push({ id: uid(), name: name, dueDay: dueDay, deliveries: {}, createdCk: cycleKeyOf(todayDate()) });
     saveData(state.data);
     closeSheet("sheetObligation");
     render();
@@ -934,6 +991,10 @@
     var parts = cycleKey.split("-");
     var monthIndex = parseInt(parts[1], 10) - 1;
     return MONTH_NAMES[monthIndex] + " de " + parts[0];
+  }
+  function missedMonthsText(missed) {
+    var n = missed.length;
+    return n + (n > 1 ? " meses anteriores" : " mês anterior") + " sem registro";
   }
   function openHistorySheet(ob) {
     document.getElementById("historyTitle").textContent = "Histórico · " + ob.name;
@@ -1105,13 +1166,30 @@
             shouldNotify = true;
             reason = daysUntil === 0 ? "Vence hoje (" + fmtDateBR(due) + ")." : "Vence em " + daysUntil + " dia" + (daysUntil > 1 ? "s" : "") + " (" + fmtDateBR(due) + ").";
           }
-          if (!shouldNotify) return;
-          var tag = ob.id + "-" + cycleKeyOf(today) + "-" + status;
-          var key = tag + "-" + todayStr;
-          if (!force && notified[key]) return;
-          sendNotification("📌 " + ob.name, reason + " (" + g.name + " › " + sub.name + ")", tag);
-          notified[key] = true;
-          sentAny = true;
+          if (shouldNotify) {
+            var tag = ob.id + "-" + cycleKeyOf(today) + "-" + status;
+            var key = tag + "-" + todayStr;
+            if (force || !notified[key]) {
+              sendNotification("📌 " + ob.name, reason + " (" + g.name + " › " + sub.name + ")", tag);
+              notified[key] = true;
+              sentAny = true;
+            }
+          }
+
+          var missed = getMissedPastCycles(ob, today);
+          if (missed.length) {
+            var missedTag = ob.id + "-missed-past";
+            var missedKey = missedTag + "-" + todayStr;
+            if (force || !notified[missedKey]) {
+              sendNotification(
+                "⚠️ " + ob.name,
+                missedMonthsText(missed) + ": " + missed.map(monthLabel).join(", ") + " (" + g.name + " › " + sub.name + ")",
+                missedTag
+              );
+              notified[missedKey] = true;
+              sentAny = true;
+            }
+          }
         });
       });
     });
