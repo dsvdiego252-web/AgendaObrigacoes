@@ -23,6 +23,7 @@ App web (PWA) para controlar as obrigações e prazos da rotina de trabalho, com
 - Botão "＋ Obrigação" para cadastrar novas obrigações em qualquer subaba.
 - Botões "＋ aba" / "＋ subaba" para organizar outras rotinas além de Rafas.
 - Lembretes locais no celular (dias antes do vencimento, configurável em ⚙️) e aviso diário enquanto uma obrigação estiver atrasada.
+- Botão "Histórico" em cada obrigação mostra os meses anteriores já entregues (data e se foi no prazo ou com atraso) — os dados de meses passados ficam salvos e nunca são apagados automaticamente.
 - Exportar backup dos dados em JSON pela tela de configurações.
 
 ## Sobre as notificações

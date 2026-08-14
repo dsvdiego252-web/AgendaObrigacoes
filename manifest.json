@@ -2,6 +2,7 @@
   "name": "Agenda de Obrigações",
   "short_name": "Obrigações",
   "description": "Controle de obrigações e prazos da rotina de trabalho",
+  "id": "./",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

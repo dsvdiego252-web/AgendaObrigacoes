@@ -198,6 +198,14 @@
 
   .group-title-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
   .group-title-row .btn { padding: 7px 11px; font-size: 12.5px; }
+
+  .history-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 11px 0; border-bottom: 1px solid var(--card-border);
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-month { font-size: 14px; font-weight: 600; }
+  .history-empty { text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 13.5px; }
 </style>
 </head>
 <body>
@@ -248,6 +256,15 @@
     </div>
     <button class="btn primary full" id="btnSaveDeliver">Confirmar entrega</button>
     <button class="btn ghost full" id="btnUndoDeliver" style="margin-top:8px;">Desfazer entrega deste mês</button>
+  </div>
+</div>
+
+<!-- Sheet: histórico -->
+<div class="backdrop" id="sheetHistory">
+  <div class="sheet">
+    <div class="handle"></div>
+    <h3 id="historyTitle">Histórico</h3>
+    <div id="historyList"></div>
   </div>
 </div>
 
@@ -593,6 +610,13 @@
     deliverBtn.textContent = delivery ? "Editar entrega" : "Marcar como entregue";
     deliverBtn.onclick = function () { openDeliverSheet(ob, sub); };
     actions.appendChild(deliverBtn);
+
+    var historyBtn = document.createElement("button");
+    historyBtn.className = "btn ghost";
+    historyBtn.textContent = "Histórico";
+    historyBtn.onclick = function () { openHistorySheet(ob); };
+    actions.appendChild(historyBtn);
+
     card.appendChild(actions);
 
     return card;
@@ -677,6 +701,56 @@
     render();
     showToast("Entrega desfeita");
   };
+
+  // Histórico
+  var MONTH_NAMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  function monthLabel(cycleKey) {
+    var parts = cycleKey.split("-");
+    var monthIndex = parseInt(parts[1], 10) - 1;
+    return MONTH_NAMES[monthIndex] + " de " + parts[0];
+  }
+  function openHistorySheet(ob) {
+    document.getElementById("historyTitle").textContent = "Histórico · " + ob.name;
+    var listEl = document.getElementById("historyList");
+    listEl.innerHTML = "";
+    var keys = Object.keys(ob.deliveries).sort(function (a, b) { return b.localeCompare(a); });
+    if (!keys.length) {
+      listEl.innerHTML = '<div class="history-empty">Nenhuma entrega registrada ainda. Assim que você marcar uma entrega, ela fica salva aqui mês a mês.</div>';
+      openSheet("sheetHistory");
+      return;
+    }
+    keys.forEach(function (ck) {
+      var delivery = ob.deliveries[ck];
+      var parts = ck.split("-");
+      var year = parseInt(parts[0], 10);
+      var monthIndex = parseInt(parts[1], 10) - 1;
+      var due = dueDateOf(ob.dueDay, year, monthIndex);
+      var deliveredDate = parseISODate(delivery.date);
+      var status = deliveredDate.getTime() <= due.getTime() ? "on_time" : "late";
+
+      var item = document.createElement("div");
+      item.className = "history-item";
+      var left = document.createElement("div");
+      var monthEl = document.createElement("div");
+      monthEl.className = "history-month";
+      monthEl.textContent = monthLabel(ck);
+      var dateEl = document.createElement("div");
+      dateEl.className = "ob-due";
+      dateEl.textContent = "Entregue em " + fmtDateBR(deliveredDate) + " · vencia dia " + ob.dueDay;
+      left.appendChild(monthEl);
+      left.appendChild(dateEl);
+
+      var badge = document.createElement("div");
+      badge.className = "status-badge status-" + status;
+      badge.style.marginTop = "0";
+      badge.textContent = STATUS_ICON[status] + " " + STATUS_LABEL[status];
+
+      item.appendChild(left);
+      item.appendChild(badge);
+      listEl.appendChild(item);
+    });
+    openSheet("sheetHistory");
+  }
 
   // Nova aba / subaba
   var groupSheetMode = "group";
