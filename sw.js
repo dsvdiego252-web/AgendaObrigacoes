@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agenda-obrigacoes-v2';
+const CACHE_NAME = 'agenda-obrigacoes-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -9,7 +9,13 @@ const APP_SHELL = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) =>
+        Promise.all(APP_SHELL.map((url) =>
+          fetch(url, { cache: 'no-store' }).then((response) => cache.put(url, response)).catch(() => {})
+        ))
+      )
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -21,13 +27,16 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first: sempre busca a versão mais nova quando há internet, e só usa o
-// cache como reserva quando o dispositivo está offline. Isso evita que o app
-// fique preso numa versão antiga depois de uma atualização.
+// Network-first e ignorando o cache HTTP do navegador (cache: 'no-store'): sempre
+// busca a versão mais nova de verdade quando há internet, e só usa o cache do
+// service worker como reserva quando o dispositivo está offline. Sem o
+// 'no-store', o fetch() ainda podia devolver uma resposta guardada no cache
+// HTTP comum do navegador, deixando o app preso numa versão antiga mesmo com
+// essa estratégia "network-first".
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' })
       .then((response) => {
         if (response && response.status === 200) {
           const copy = response.clone();
