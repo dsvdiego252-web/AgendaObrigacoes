@@ -257,6 +257,10 @@
     <h3 id="deliverTitle">Marcar entrega</h3>
     <div class="hint" id="deliverMonthLabel" style="margin: -6px 0 14px; font-size: 13px;"></div>
     <div class="field">
+      <label for="deliverMonth">Mês de referência</label>
+      <select id="deliverMonth"></select>
+    </div>
+    <div class="field">
       <label for="deliverDate">Data em que foi entregue</label>
       <input type="date" id="deliverDate" />
     </div>
@@ -695,30 +699,56 @@
 
   // Marcar entrega
   var deliverCtx = { ob: null, sub: null };
-  function openDeliverSheet(ob, sub) {
-    deliverCtx.ob = ob; deliverCtx.sub = sub;
-    var ck = cycleKeyOf(todayDate());
-    var delivery = ob.deliveries[ck];
-    document.getElementById("deliverTitle").textContent = ob.name;
-    document.getElementById("deliverMonthLabel").textContent = "Referente a " + monthLabel(ck) + " · vence dia " + ob.dueDay;
+  function recentCycleKeys(monthsBack) {
+    var today = todayDate();
+    var keys = [];
+    for (var i = 0; i <= monthsBack; i++) {
+      var d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      keys.push(cycleKeyOf(d));
+    }
+    return keys;
+  }
+  function refreshDeliverFieldsForMonth(ck) {
+    var delivery = deliverCtx.ob.deliveries[ck];
+    var due = dueDateOf(deliverCtx.ob.dueDay, parseInt(ck.split("-")[0], 10), parseInt(ck.split("-")[1], 10) - 1);
+    document.getElementById("deliverMonthLabel").textContent = "Vence dia " + deliverCtx.ob.dueDay + " · " + fmtDateBR(due);
     document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
     document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
+  }
+  function openDeliverSheet(ob, sub) {
+    deliverCtx.ob = ob; deliverCtx.sub = sub;
+    document.getElementById("deliverTitle").textContent = ob.name;
+    var currentCk = cycleKeyOf(todayDate());
+    var select = document.getElementById("deliverMonth");
+    select.innerHTML = "";
+    recentCycleKeys(11).forEach(function (ck) {
+      var opt = document.createElement("option");
+      opt.value = ck;
+      opt.textContent = monthLabel(ck) + (ob.deliveries[ck] ? " ✓" : "");
+      select.appendChild(opt);
+    });
+    select.value = currentCk;
+    refreshDeliverFieldsForMonth(currentCk);
     openSheet("sheetDeliver");
   }
+  document.getElementById("deliverMonth").onchange = function (e) {
+    if (!deliverCtx.ob) return;
+    refreshDeliverFieldsForMonth(e.target.value);
+  };
   document.getElementById("btnSaveDeliver").onclick = function () {
     if (!deliverCtx.ob) return;
     var val = document.getElementById("deliverDate").value;
     if (!val) { showToast("Escolha uma data"); return; }
-    var ck = cycleKeyOf(todayDate());
+    var ck = document.getElementById("deliverMonth").value;
     deliverCtx.ob.deliveries[ck] = { date: val };
     saveData(state.data);
     closeSheet("sheetDeliver");
     render();
-    showToast("Entrega registrada");
+    showToast("Entrega de " + monthLabel(ck) + " registrada");
   };
   document.getElementById("btnUndoDeliver").onclick = function () {
     if (!deliverCtx.ob) return;
-    var ck = cycleKeyOf(todayDate());
+    var ck = document.getElementById("deliverMonth").value;
     delete deliverCtx.ob.deliveries[ck];
     saveData(state.data);
     closeSheet("sheetDeliver");
