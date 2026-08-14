@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Agenda de Obrigações</title>
+<meta name="description" content="Controle de obrigações e prazos da rotina de trabalho" />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="theme-color" content="#2563eb" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Obrigações" />
+<meta name="mobile-web-app-capable" content="yes" />
+
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-elev: #16213e;
+    --card: #1c2b4a;
+    --card-border: #2a3b60;
+    --text: #eef2ff;
+    --text-dim: #a3b0d1;
+    --accent: #3b82f6;
+    --accent-dim: #1d4ed8;
+    --green: #22c55e;
+    --green-bg: rgba(34,197,94,0.16);
+    --red: #ef4444;
+    --red-bg: rgba(239,68,68,0.16);
+    --orange: #f97316;
+    --orange-bg: rgba(249,115,22,0.16);
+    --gray: #94a3b8;
+    --gray-bg: rgba(148,163,184,0.14);
+    --radius: 14px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: contain;
+  }
+
+  header.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding: calc(14px + var(--safe-top)) 16px 10px;
+    background: linear-gradient(180deg, #0f172a 70%, rgba(15,23,42,0.85));
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--card-border);
+  }
+  .topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .app-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+  .app-title .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(59,130,246,0.18); }
+  .icon-btn {
+    background: var(--card); border: 1px solid var(--card-border); color: var(--text);
+    width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-size: 17px; cursor: pointer;
+  }
+  .icon-btn:active { transform: scale(0.94); }
+
+  .tabs-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 2px 2px; scrollbar-width: none; }
+  .tabs-scroll::-webkit-scrollbar { display: none; }
+  .tab-chip {
+    flex: 0 0 auto; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--card-border);
+    background: var(--card); color: var(--text-dim); font-size: 14.5px; font-weight: 600; cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab-chip.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .tab-chip.add { color: var(--accent); border-style: dashed; }
+
+  .subtabs-scroll { display: flex; gap: 6px; overflow-x: auto; padding: 8px 2px 0; scrollbar-width: none; }
+  .subtabs-scroll::-webkit-scrollbar { display: none; }
+  .subtab-chip {
+    flex: 0 0 auto; padding: 6px 13px; border-radius: 999px; border: 1px solid transparent;
+    background: var(--bg-elev); color: var(--text-dim); font-size: 13.5px; font-weight: 600; cursor: pointer;
+    white-space: nowrap;
+  }
+  .subtab-chip.active { background: rgba(59,130,246,0.18); color: #93c5fd; border-color: rgba(59,130,246,0.4); }
+  .subtab-chip.add { color: var(--accent); border-style: dashed; border-color: var(--card-border); }
+
+  main { padding: 14px 16px calc(90px + var(--safe-bottom)); max-width: 640px; margin: 0 auto; }
+
+  .summary-row { display: flex; gap: 8px; margin: 6px 0 16px; flex-wrap: wrap; }
+  .summary-pill { font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
+  .summary-pill .n { font-size: 13px; }
+  .summary-pill.green { background: var(--green-bg); color: var(--green); }
+  .summary-pill.red { background: var(--red-bg); color: var(--red); }
+  .summary-pill.orange { background: var(--orange-bg); color: var(--orange); }
+  .summary-pill.gray { background: var(--gray-bg); color: var(--gray); }
+
+  .empty-state { text-align: center; padding: 50px 20px; color: var(--text-dim); }
+  .empty-state .big { font-size: 40px; margin-bottom: 10px; }
+
+  .ob-card {
+    background: var(--card); border: 1px solid var(--card-border); border-left: 4px solid var(--gray);
+    border-radius: var(--radius); padding: 14px 14px 12px; margin-bottom: 12px;
+  }
+  .ob-card.status-on_time { border-left-color: var(--green); }
+  .ob-card.status-overdue { border-left-color: var(--red); }
+  .ob-card.status-late { border-left-color: var(--orange); }
+  .ob-card.status-pending { border-left-color: var(--gray); }
+
+  .ob-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .ob-name { font-size: 15.5px; font-weight: 600; line-height: 1.35; }
+  .ob-due { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
+  .ob-del-btn { background: none; border: none; color: var(--text-dim); font-size: 16px; padding: 2px 4px; cursor: pointer; }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700;
+    padding: 4px 9px; border-radius: 7px; margin-top: 10px;
+  }
+  .status-badge.status-on_time { background: var(--green-bg); color: var(--green); }
+  .status-badge.status-overdue { background: var(--red-bg); color: var(--red); }
+  .status-badge.status-late { background: var(--orange-bg); color: var(--orange); }
+  .status-badge.status-pending { background: var(--gray-bg); color: var(--gray); }
+
+  .ob-actions { display: flex; gap: 8px; margin-top: 11px; flex-wrap: wrap; }
+  .btn {
+    border: none; border-radius: 9px; padding: 9px 13px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.primary { background: var(--accent); color: white; }
+  .btn.ghost { background: var(--bg-elev); color: var(--text-dim); border: 1px solid var(--card-border); }
+  .btn.full { width: 100%; }
+  .btn.danger { background: var(--red-bg); color: var(--red); }
+
+  .fab {
+    position: fixed; right: 18px; bottom: calc(20px + var(--safe-bottom)); z-index: 25;
+    background: var(--accent); color: white; border: none; border-radius: 999px;
+    padding: 15px 20px; font-size: 15px; font-weight: 700; box-shadow: 0 8px 24px rgba(59,130,246,0.45);
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+  }
+  .fab:active { transform: scale(0.96); }
+
+  .backdrop {
+    position: fixed; inset: 0; background: rgba(2,6,20,0.65); z-index: 40;
+    display: flex; align-items: flex-end; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
+  }
+  .backdrop.open { opacity: 1; pointer-events: auto; }
+  .sheet {
+    background: var(--bg-elev); width: 100%; max-width: 640px; border-radius: 18px 18px 0 0;
+    padding: 18px 18px calc(22px + var(--safe-bottom)); transform: translateY(16px); transition: transform 0.18s ease;
+    max-height: 86vh; overflow-y: auto; border: 1px solid var(--card-border); border-bottom: none;
+  }
+  .backdrop.open .sheet { transform: translateY(0); }
+  .sheet h3 { margin: 0 0 14px; font-size: 17px; }
+  .sheet .handle { width: 36px; height: 4px; background: var(--card-border); border-radius: 3px; margin: 0 auto 14px; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
+  .field input, .field select {
+    width: 100%; background: var(--card); border: 1px solid var(--card-border); color: var(--text);
+    border-radius: 10px; padding: 11px 12px; font-size: 15px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+  .hint { font-size: 12px; color: var(--text-dim); margin-top: 5px; line-height: 1.4; }
+
+  .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--card-border); gap: 12px; }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row .label { font-size: 14.5px; font-weight: 600; }
+  .settings-row .desc { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+
+  .switch { position: relative; width: 46px; height: 27px; flex: 0 0 auto; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; background: var(--card-border); border-radius: 999px; cursor: pointer; transition: 0.2s; }
+  .switch .slider::before { content: ""; position: absolute; width: 21px; height: 21px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(19px); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(24px + var(--safe-bottom)); transform: translateX(-50%) translateY(10px);
+    background: #0b1220; border: 1px solid var(--card-border); color: var(--text); padding: 11px 16px; border-radius: 11px;
+    font-size: 13.5px; z-index: 60; opacity: 0; transition: 0.2s; pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    max-width: 90vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .install-banner {
+    margin: 0 0 14px; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius);
+    padding: 12px 14px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim);
+  }
+  .install-banner .btn { flex: 0 0 auto; }
+  .install-banner .txt { flex: 1; line-height: 1.4; }
+  .install-banner .txt b { color: var(--text); }
+
+  .group-title-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+  .group-title-row .btn { padding: 7px 11px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <div class="app-title"><span class="dot"></span>Agenda de Obrigações</div>
+    <button class="icon-btn" id="btnSettings" aria-label="Configurações">⚙️</button>
+  </div>
+  <div class="tabs-scroll" id="groupTabs"></div>
+  <div class="subtabs-scroll" id="subgroupTabs"></div>
+</header>
+
+<main id="mainContent">
+  <div id="installBanner"></div>
+  <div id="summaryRow" class="summary-row"></div>
+  <div id="obligationsList"></div>
+</main>
+
+<button class="fab" id="btnAddObligation">＋ Obrigação</button>
+
+<!-- Sheet: adicionar/editar obrigação -->
+<div class="backdrop" id="sheetObligation">
+  <div class="sheet">
+    <div class="handle"></div>
+    <h3 id="obSheetTitle">Nova obrigação</h3>
+    <div class="field">
+      <label for="obName">Nome da obrigação</label>
+      <input type="text" id="obName" placeholder="Ex: SPED-ICMS" />
+    </div>
+    <div class="field">
+      <label for="obDueDay">Vencimento (dia do mês)</label>
+      <input type="number" id="obDueDay" min="1" max="31" placeholder="Ex: 10" />
+      <div class="hint">Se o mês tiver menos dias que o informado, o app usa o último dia do mês.</div>
+    </div>
+    <button class="btn primary full" id="btnSaveObligation">Salvar obrigação</button>
+  </div>
+</div>
+
+<!-- Sheet: marcar entrega -->
+<div class="backdrop" id="sheetDeliver">
+  <div class="sheet">
+    <div class="handle"></div>
+    <h3>Marcar entrega</h3>
+    <div class="field">
+      <label for="deliverDate">Data em que foi entregue</label>
+      <input type="date" id="deliverDate" />
+    </div>
+    <button class="btn primary full" id="btnSaveDeliver">Confirmar entrega</button>
+    <button class="btn ghost full" id="btnUndoDeliver" style="margin-top:8px;">Desfazer entrega deste mês</button>
+  </div>
+</div>
+
+<!-- Sheet: nova aba / subaba -->
+<div class="backdrop" id="sheetGroup">
+  <div class="sheet">
+    <div class="handle"></div>
+    <h3 id="groupSheetTitle">Nova aba</h3>
+    <div class="field">
+      <label for="groupName" id="groupNameLabel">Nome da aba</label>
+      <input type="text" id="groupName" placeholder="Ex: Rafas" />
+    </div>
+    <button class="btn primary full" id="btnSaveGroup">Salvar</button>
+  </div>
+</div>
+
+<!-- Sheet: configurações -->
+<div class="backdrop" id="sheetSettings">
+  <div class="sheet">
+    <div class="handle"></div>
+    <h3>Configurações</h3>
+    <div class="settings-row">
+      <div>
+        <div class="label">Notificações</div>
+        <div class="desc">Avisar no celular sobre prazos</div>
+      </div>
+      <button class="btn primary" id="btnEnableNotif">Ativar</button>
+    </div>
+    <div class="settings-row">
+      <div>
+        <div class="label">Lembrar com antecedência</div>
+        <div class="desc">Dias antes do vencimento</div>
+      </div>
+      <select id="reminderDays" style="width:80px; background: var(--card); color: var(--text); border:1px solid var(--card-border); border-radius:8px; padding:8px;">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="5">5</option>
+        <option value="7">7</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <div>
+        <div class="label">Verificar prazos agora</div>
+        <div class="desc">Testa e dispara notificações pendentes</div>
+      </div>
+      <button class="btn ghost" id="btnCheckNow">Verificar</button>
+    </div>
+    <div class="hint" style="margin-top:6px;">
+      As notificações funcionam de forma confiável quando o app está aberto ou foi aberto recentemente.
+      Navegadores não permitem que uma página avise no celular em segundo plano sem um servidor próprio —
+      por isso, abra o app pelo menos uma vez por dia para os lembretes funcionarem bem. Instalar o app na
+      tela inicial ajuda bastante.
+    </div>
+    <button class="btn danger full" id="btnExportData" style="margin-top:16px;">Exportar backup (JSON)</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "agenda-obrigacoes-data-v1";
+  var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
+  var NOTIFIED_KEY = "agenda-obrigacoes-notified-v1";
+
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+  function todayDate() { var d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+  function cycleKeyOf(date) { return date.getFullYear() + "-" + pad2(date.getMonth() + 1); }
+  function daysInMonth(year, monthIndex) { return new Date(year, monthIndex + 1, 0).getDate(); }
+  function dueDateOf(dueDay, year, monthIndex) {
+    var dim = daysInMonth(year, monthIndex);
+    var day = Math.min(dueDay, dim);
+    var d = new Date(year, monthIndex, day);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  function fmtDateBR(d) { return pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1) + "/" + d.getFullYear(); }
+  function parseISODate(s) {
+    var parts = s.split("-");
+    var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  function toISODate(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+
+  function defaultData() {
+    function ob(name, dueDay) { return { id: uid(), name: name, dueDay: dueDay, deliveries: {} }; }
+    return {
+      groups: [
+        {
+          id: uid(),
+          name: "Rafas",
+          subgroups: [
+            {
+              id: uid(),
+              name: "AP Faria",
+              obligations: [
+                ob("Lançar notas CPFL", 10),
+                ob("REINF - Produção Rural", 10),
+                ob("REINF - Retenções", 10),
+                ob("Passar projeção de impostos", 25),
+                ob("SPED-ICMS", 10),
+                ob("Tirar o Dare ICMS e passar para a Gabriela", 10),
+                ob("SPED-Contribuições", 15),
+                ob("Tirar as Guias de PIS/Cofins e passar para a Gabriela", 15),
+                ob("MIT", 15),
+                ob("DCTF-WEB transmitir", 15),
+                ob("Tirar Parcelamentos de impostos", 5),
+                ob("Tirar nota de produtor rural", 30),
+                ob("Lançar nota de produto rural", 30)
+              ]
+            },
+            { id: uid(), name: "JV", obligations: [] },
+            { id: uid(), name: "Paulo Sergio", obligations: [] }
+          ]
+        }
+      ]
+    };
+  }
+
+  function loadData() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) { var d = defaultData(); saveData(d); return d; }
+      return JSON.parse(raw);
+    } catch (e) {
+      var d2 = defaultData(); saveData(d2); return d2;
+    }
+  }
+  function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+  function loadPrefs() {
+    try {
+      var raw = localStorage.getItem(PREFS_KEY);
+      if (!raw) return { reminderDays: 3, notifEnabled: false };
+      return JSON.parse(raw);
+    } catch (e) { return { reminderDays: 3, notifEnabled: false }; }
+  }
+  function savePrefs(p) { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); }
+
+  function loadNotified() {
+    try { return JSON.parse(localStorage.getItem(NOTIFIED_KEY) || "{}"); } catch (e) { return {}; }
+  }
+  function saveNotified(n) { localStorage.setItem(NOTIFIED_KEY, JSON.stringify(n)); }
+
+  var state = {
+    data: loadData(),
+    prefs: loadPrefs(),
+    activeGroupId: null,
+    activeSubgroupId: null
+  };
+  if (state.data.groups.length) {
+    state.activeGroupId = state.data.groups[0].id;
+    var g0 = state.data.groups[0];
+    if (g0.subgroups.length) state.activeSubgroupId = g0.subgroups[0].id;
+  }
+
+  function getActiveGroup() {
+    return state.data.groups.find(function (g) { return g.id === state.activeGroupId; });
+  }
+  function getActiveSubgroup() {
+    var g = getActiveGroup();
+    if (!g) return null;
+    return g.subgroups.find(function (s) { return s.id === state.activeSubgroupId; });
+  }
+
+  function getStatus(obligation, today) {
+    var ck = cycleKeyOf(today);
+    var due = dueDateOf(obligation.dueDay, today.getFullYear(), today.getMonth());
+    var delivery = obligation.deliveries[ck];
+    if (delivery) {
+      var deliveredDate = parseISODate(delivery.date);
+      return deliveredDate.getTime() <= due.getTime() ? "on_time" : "late";
+    }
+    return today.getTime() > due.getTime() ? "overdue" : "pending";
+  }
+
+  var STATUS_LABEL = {
+    on_time: "Entregue no prazo",
+    late: "Entregue com atraso",
+    overdue: "Atrasada",
+    pending: "No prazo"
+  };
+  var STATUS_ICON = { on_time: "✅", late: "🟠", overdue: "🔴", pending: "🕒" };
+
+  // ---------- Render ----------
+
+  function render() {
+    renderGroupTabs();
+    renderSubgroupTabs();
+    renderSummaryAndList();
+    renderInstallBanner();
+  }
+
+  function renderGroupTabs() {
+    var el = document.getElementById("groupTabs");
+    el.innerHTML = "";
+    state.data.groups.forEach(function (g) {
+      var chip = document.createElement("button");
+      chip.className = "tab-chip" + (g.id === state.activeGroupId ? " active" : "");
+      chip.textContent = g.name;
+      chip.onclick = function () {
+        state.activeGroupId = g.id;
+        state.activeSubgroupId = g.subgroups.length ? g.subgroups[0].id : null;
+        render();
+      };
+      el.appendChild(chip);
+    });
+    var addChip = document.createElement("button");
+    addChip.className = "tab-chip add";
+    addChip.textContent = "＋ aba";
+    addChip.onclick = function () { openGroupSheet("group", null); };
+    el.appendChild(addChip);
+  }
+
+  function renderSubgroupTabs() {
+    var el = document.getElementById("subgroupTabs");
+    el.innerHTML = "";
+    var g = getActiveGroup();
+    if (!g) return;
+    g.subgroups.forEach(function (s) {
+      var chip = document.createElement("button");
+      chip.className = "subtab-chip" + (s.id === state.activeSubgroupId ? " active" : "");
+      chip.textContent = s.name;
+      chip.onclick = function () { state.activeSubgroupId = s.id; render(); };
+      el.appendChild(chip);
+    });
+    var addChip = document.createElement("button");
+    addChip.className = "subtab-chip add";
+    addChip.textContent = "＋ subaba";
+    addChip.onclick = function () { openGroupSheet("subgroup", null); };
+    el.appendChild(addChip);
+  }
+
+  function renderSummaryAndList() {
+    var summaryEl = document.getElementById("summaryRow");
+    var listEl = document.getElementById("obligationsList");
+    summaryEl.innerHTML = "";
+    listEl.innerHTML = "";
+
+    var sub = getActiveSubgroup();
+    var today = todayDate();
+
+    if (!sub) {
+      listEl.innerHTML = '<div class="empty-state"><div class="big">🗂️</div>Crie uma subaba para começar.</div>';
+      return;
+    }
+
+    if (!sub.obligations.length) {
+      listEl.innerHTML = '<div class="empty-state"><div class="big">📋</div>Nenhuma obrigação cadastrada em <b>' + escapeHtml(sub.name) + '</b> ainda.<br/>Toque em "＋ Obrigação" para adicionar.</div>';
+      return;
+    }
+
+    var counts = { on_time: 0, late: 0, overdue: 0, pending: 0 };
+    var withStatus = sub.obligations.map(function (ob) {
+      var status = getStatus(ob, today);
+      counts[status]++;
+      return { ob: ob, status: status, due: dueDateOf(ob.dueDay, today.getFullYear(), today.getMonth()) };
+    });
+
+    withStatus.sort(function (a, b) {
+      var order = { overdue: 0, pending: 1, late: 2, on_time: 3 };
+      if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+      return a.due - b.due;
+    });
+
+    function pill(cls, icon, count, label) {
+      var d = document.createElement("div");
+      d.className = "summary-pill " + cls;
+      d.innerHTML = icon + ' <span class="n">' + count + "</span> " + label;
+      return d;
+    }
+    summaryEl.appendChild(pill("red", "🔴", counts.overdue, "atrasadas"));
+    summaryEl.appendChild(pill("gray", "🕒", counts.pending, "no prazo"));
+    summaryEl.appendChild(pill("orange", "🟠", counts.late, "com atraso"));
+    summaryEl.appendChild(pill("green", "✅", counts.on_time, "entregues"));
+
+    withStatus.forEach(function (item) {
+      listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
+    });
+  }
+
+  function escapeHtml(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function buildObligationCard(ob, status, due, sub) {
+    var card = document.createElement("div");
+    card.className = "ob-card status-" + status;
+
+    var top = document.createElement("div");
+    top.className = "ob-top";
+
+    var left = document.createElement("div");
+    var name = document.createElement("div");
+    name.className = "ob-name";
+    name.textContent = ob.name;
+    var dueLine = document.createElement("div");
+    dueLine.className = "ob-due";
+    dueLine.textContent = "Vence dia " + ob.dueDay + " · " + fmtDateBR(due);
+    left.appendChild(name);
+    left.appendChild(dueLine);
+
+    var delBtn = document.createElement("button");
+    delBtn.className = "ob-del-btn";
+    delBtn.textContent = "🗑️";
+    delBtn.setAttribute("aria-label", "Excluir obrigação");
+    delBtn.onclick = function () {
+      if (confirm('Excluir a obrigação "' + ob.name + '"?')) {
+        sub.obligations = sub.obligations.filter(function (o) { return o.id !== ob.id; });
+        saveData(state.data);
+        render();
+        showToast("Obrigação excluída");
+      }
+    };
+
+    top.appendChild(left);
+    top.appendChild(delBtn);
+    card.appendChild(top);
+
+    var badge = document.createElement("div");
+    badge.className = "status-badge status-" + status;
+    var ck = cycleKeyOf(todayDate());
+    var delivery = ob.deliveries[ck];
+    var badgeText = STATUS_LABEL[status];
+    if (delivery && (status === "on_time" || status === "late")) {
+      badgeText += " · " + fmtDateBR(parseISODate(delivery.date));
+    }
+    badge.textContent = STATUS_ICON[status] + " " + badgeText;
+    card.appendChild(badge);
+
+    var actions = document.createElement("div");
+    actions.className = "ob-actions";
+    var deliverBtn = document.createElement("button");
+    deliverBtn.className = "btn primary";
+    deliverBtn.textContent = delivery ? "Editar entrega" : "Marcar como entregue";
+    deliverBtn.onclick = function () { openDeliverSheet(ob, sub); };
+    actions.appendChild(deliverBtn);
+    card.appendChild(actions);
+
+    return card;
+  }
+
+  function renderInstallBanner() {
+    var el = document.getElementById("installBanner");
+    el.innerHTML = "";
+    if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) return;
+    if (localStorage.getItem("hideInstallBanner") === "1") return;
+    var div = document.createElement("div");
+    div.className = "install-banner";
+    div.innerHTML = '<div class="txt"><b>Instale como app.</b> Toque em ⚙️ para ver como adicionar este app à tela inicial e ativar as notificações.</div>';
+    var btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.textContent = "Ok";
+    btn.onclick = function () { localStorage.setItem("hideInstallBanner", "1"); render(); };
+    div.appendChild(btn);
+    el.appendChild(div);
+  }
+
+  // ---------- Sheets ----------
+
+  function openSheet(id) { document.getElementById(id).classList.add("open"); }
+  function closeSheet(id) { document.getElementById(id).classList.remove("open"); }
+
+  document.querySelectorAll(".backdrop").forEach(function (bd) {
+    bd.addEventListener("click", function (e) { if (e.target === bd) bd.classList.remove("open"); });
+  });
+
+  // Nova obrigação
+  document.getElementById("btnAddObligation").onclick = function () {
+    var sub = getActiveSubgroup();
+    if (!sub) { showToast("Crie uma aba e subaba primeiro"); return; }
+    document.getElementById("obSheetTitle").textContent = "Nova obrigação em " + sub.name;
+    document.getElementById("obName").value = "";
+    document.getElementById("obDueDay").value = "";
+    openSheet("sheetObligation");
+    setTimeout(function () { document.getElementById("obName").focus(); }, 200);
+  };
+  document.getElementById("btnSaveObligation").onclick = function () {
+    var sub = getActiveSubgroup();
+    if (!sub) return;
+    var name = document.getElementById("obName").value.trim();
+    var dueDay = parseInt(document.getElementById("obDueDay").value, 10);
+    if (!name) { showToast("Informe o nome da obrigação"); return; }
+    if (!dueDay || dueDay < 1 || dueDay > 31) { showToast("Informe um dia de vencimento válido (1-31)"); return; }
+    sub.obligations.push({ id: uid(), name: name, dueDay: dueDay, deliveries: {} });
+    saveData(state.data);
+    closeSheet("sheetObligation");
+    render();
+    showToast("Obrigação adicionada");
+  };
+
+  // Marcar entrega
+  var deliverCtx = { ob: null, sub: null };
+  function openDeliverSheet(ob, sub) {
+    deliverCtx.ob = ob; deliverCtx.sub = sub;
+    var ck = cycleKeyOf(todayDate());
+    var delivery = ob.deliveries[ck];
+    document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
+    document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
+    openSheet("sheetDeliver");
+  }
+  document.getElementById("btnSaveDeliver").onclick = function () {
+    if (!deliverCtx.ob) return;
+    var val = document.getElementById("deliverDate").value;
+    if (!val) { showToast("Escolha uma data"); return; }
+    var ck = cycleKeyOf(todayDate());
+    deliverCtx.ob.deliveries[ck] = { date: val };
+    saveData(state.data);
+    closeSheet("sheetDeliver");
+    render();
+    showToast("Entrega registrada");
+  };
+  document.getElementById("btnUndoDeliver").onclick = function () {
+    if (!deliverCtx.ob) return;
+    var ck = cycleKeyOf(todayDate());
+    delete deliverCtx.ob.deliveries[ck];
+    saveData(state.data);
+    closeSheet("sheetDeliver");
+    render();
+    showToast("Entrega desfeita");
+  };
+
+  // Nova aba / subaba
+  var groupSheetMode = "group";
+  function openGroupSheet(mode) {
+    groupSheetMode = mode;
+    document.getElementById("groupSheetTitle").textContent = mode === "group" ? "Nova aba" : "Nova subaba";
+    document.getElementById("groupNameLabel").textContent = mode === "group" ? "Nome da aba" : "Nome da subaba";
+    document.getElementById("groupName").value = "";
+    openSheet("sheetGroup");
+    setTimeout(function () { document.getElementById("groupName").focus(); }, 200);
+  }
+  document.getElementById("btnSaveGroup").onclick = function () {
+    var name = document.getElementById("groupName").value.trim();
+    if (!name) { showToast("Informe um nome"); return; }
+    if (groupSheetMode === "group") {
+      var newGroup = { id: uid(), name: name, subgroups: [] };
+      state.data.groups.push(newGroup);
+      state.activeGroupId = newGroup.id;
+      state.activeSubgroupId = null;
+    } else {
+      var g = getActiveGroup();
+      if (!g) { showToast("Selecione uma aba primeiro"); return; }
+      var newSub = { id: uid(), name: name, obligations: [] };
+      g.subgroups.push(newSub);
+      state.activeSubgroupId = newSub.id;
+    }
+    saveData(state.data);
+    closeSheet("sheetGroup");
+    render();
+    showToast("Salvo com sucesso");
+  };
+
+  // Configurações
+  document.getElementById("btnSettings").onclick = function () {
+    document.getElementById("reminderDays").value = String(state.prefs.reminderDays);
+    updateNotifButton();
+    openSheet("sheetSettings");
+  };
+  function updateNotifButton() {
+    var btn = document.getElementById("btnEnableNotif");
+    if (!("Notification" in window)) { btn.textContent = "Não suportado"; btn.disabled = true; return; }
+    if (Notification.permission === "granted") { btn.textContent = "Ativado ✓"; btn.className = "btn ghost"; }
+    else { btn.textContent = "Ativar"; btn.className = "btn primary"; }
+  }
+  document.getElementById("btnEnableNotif").onclick = function () {
+    if (!("Notification" in window)) return;
+    Notification.requestPermission().then(function (perm) {
+      state.prefs.notifEnabled = perm === "granted";
+      savePrefs(state.prefs);
+      updateNotifButton();
+      if (perm === "granted") { showToast("Notificações ativadas"); checkAndNotify(true); }
+      else showToast("Permissão negada pelo navegador");
+    });
+  };
+  document.getElementById("reminderDays").onchange = function (e) {
+    state.prefs.reminderDays = parseInt(e.target.value, 10);
+    savePrefs(state.prefs);
+  };
+  document.getElementById("btnCheckNow").onclick = function () { checkAndNotify(true); showToast("Verificação concluída"); };
+  document.getElementById("btnExportData").onclick = function () {
+    var blob = new Blob([JSON.stringify(state.data, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "agenda-obrigacoes-backup.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  };
+
+  // ---------- Toast ----------
+  var toastTimer = null;
+  function showToast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2200);
+  }
+
+  // ---------- Notificações ----------
+
+  function sendNotification(title, body, tag) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+      navigator.serviceWorker.ready.then(function (reg) {
+        reg.showNotification(title, {
+          body: body,
+          tag: tag,
+          icon: "icons/icon-192.png",
+          badge: "icons/icon-192.png",
+          vibrate: [100, 50, 100],
+          renotify: false
+        }).catch(function () {
+          try { new Notification(title, { body: body, tag: tag, icon: "icons/icon-192.png" }); } catch (e) {}
+        });
+      });
+    } else {
+      try { new Notification(title, { body: body, tag: tag, icon: "icons/icon-192.png" }); } catch (e) {}
+    }
+  }
+
+  function checkAndNotify(force) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    var today = todayDate();
+    var todayStr = toISODate(today);
+    var notified = loadNotified();
+    var sentAny = false;
+
+    state.data.groups.forEach(function (g) {
+      g.subgroups.forEach(function (sub) {
+        sub.obligations.forEach(function (ob) {
+          var status = getStatus(ob, today);
+          if (status === "on_time" || status === "late") return;
+          var due = dueDateOf(ob.dueDay, today.getFullYear(), today.getMonth());
+          var daysUntil = Math.round((due - today) / 86400000);
+          var shouldNotify = false;
+          var reason = "";
+          if (status === "overdue") { shouldNotify = true; reason = "Atrasada! Venceu em " + fmtDateBR(due) + "."; }
+          else if (status === "pending" && daysUntil <= state.prefs.reminderDays && daysUntil >= 0) {
+            shouldNotify = true;
+            reason = daysUntil === 0 ? "Vence hoje (" + fmtDateBR(due) + ")." : "Vence em " + daysUntil + " dia" + (daysUntil > 1 ? "s" : "") + " (" + fmtDateBR(due) + ").";
+          }
+          if (!shouldNotify) return;
+          var tag = ob.id + "-" + cycleKeyOf(today) + "-" + status;
+          var key = tag + "-" + todayStr;
+          if (!force && notified[key]) return;
+          sendNotification("📌 " + ob.name, reason + " (" + g.name + " › " + sub.name + ")", tag);
+          notified[key] = true;
+          sentAny = true;
+        });
+      });
+    });
+
+    saveNotified(notified);
+    return sentAny;
+  }
+
+  // ---------- Service worker ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").then(function (reg) {
+        if (reg.periodicSync) {
+          navigator.permissions.query({ name: "periodic-background-sync" }).then(function (status) {
+            if (status.state === "granted") {
+              reg.periodicSync.register("check-obligations", { minInterval: 12 * 60 * 60 * 1000 }).catch(function () {});
+            }
+          }).catch(function () {});
+        }
+      }).catch(function () {});
+
+      navigator.serviceWorker.addEventListener("message", function (event) {
+        if (event.data && event.data.type === "check-now") checkAndNotify(false);
+      });
+    });
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") checkAndNotify(false);
+  });
+
+  // ---------- Init ----------
+  render();
+  updateNotifButton();
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    setTimeout(function () { checkAndNotify(false); }, 800);
+  }
+  setInterval(function () { checkAndNotify(false); }, 30 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
