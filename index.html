@@ -292,11 +292,6 @@
     <h3 id="deliverTitle">Marcar entrega</h3>
     <div class="hint" id="deliverMonthLabel" style="margin: -6px 0 14px; font-size: 13px;"></div>
     <div class="field">
-      <label for="deliverMonth">Mês de referência</label>
-      <select id="deliverMonth"></select>
-      <div class="hint" id="deliverMonthWarning" style="display:none; color: var(--orange);">Isso registra a entrega desse mês específico — o status mostrado no card continua sendo sempre o do mês atual.</div>
-    </div>
-    <div class="field">
       <label for="deliverDate">Data em que foi entregue</label>
       <input type="date" id="deliverDate" />
     </div>
@@ -868,72 +863,36 @@
     showToast("Obrigação adicionada");
   };
 
-  // Marcar entrega
+  // Marcar entrega — sempre resolve o ciclo do mês atual, que é o que o card
+  // exibido na tela está mostrando. O "mês de referência" era uma gaveta
+  // separada que confundia (o card continuava vermelho mesmo depois de marcar
+  // um mês passado como entregue), então foi removido.
   var deliverCtx = { ob: null, sub: null };
-  function recentCycleKeys(monthsBack) {
-    var today = todayDate();
-    var keys = [];
-    for (var i = 0; i <= monthsBack; i++) {
-      var d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      keys.push(cycleKeyOf(d));
-    }
-    return keys;
-  }
-  function refreshDeliverFieldsForMonth(ck) {
-    var delivery = deliverCtx.ob.deliveries[ck];
-    var due = dueDateOf(deliverCtx.ob.dueDay, parseInt(ck.split("-")[0], 10), parseInt(ck.split("-")[1], 10) - 1);
-    document.getElementById("deliverMonthLabel").textContent = "Vence dia " + deliverCtx.ob.dueDay + " · " + fmtDateBR(due);
-    // Se o mês escolhido for o mês atual, sugere hoje; se for um mês passado sem
-    // entrega registrada, sugere o próprio dia de vencimento daquele mês em vez de
-    // hoje — evita salvar sem querer uma data de hoje dentro de um mês antigo.
-    var defaultDate = ck === cycleKeyOf(todayDate()) ? toISODate(todayDate()) : toISODate(due);
-    document.getElementById("deliverDate").value = delivery ? delivery.date : defaultDate;
-    document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
-    document.getElementById("deliverMonthWarning").style.display = ck === cycleKeyOf(todayDate()) ? "none" : "block";
-  }
   function openDeliverSheet(ob, sub) {
     deliverCtx.ob = ob; deliverCtx.sub = sub;
     document.getElementById("deliverTitle").textContent = ob.name;
-    var currentCk = cycleKeyOf(todayDate());
-    var select = document.getElementById("deliverMonth");
-    select.innerHTML = "";
-    recentCycleKeys(11).forEach(function (ck) {
-      var opt = document.createElement("option");
-      opt.value = ck;
-      opt.textContent = monthLabel(ck) + (ob.deliveries[ck] ? " ✓" : "");
-      select.appendChild(opt);
-    });
-    select.value = currentCk;
-    refreshDeliverFieldsForMonth(currentCk);
+    var ck = cycleKeyOf(todayDate());
+    var due = dueDateOf(ob.dueDay, todayDate().getFullYear(), todayDate().getMonth());
+    var delivery = ob.deliveries[ck];
+    document.getElementById("deliverMonthLabel").textContent = "Referente a " + monthLabel(ck) + " · vence dia " + ob.dueDay + " · " + fmtDateBR(due);
+    document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
+    document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
     openSheet("sheetDeliver");
   }
-  document.getElementById("deliverMonth").onchange = function (e) {
-    if (!deliverCtx.ob) return;
-    refreshDeliverFieldsForMonth(e.target.value);
-  };
   document.getElementById("btnSaveDeliver").onclick = function () {
-    try {
-      if (!deliverCtx.ob) { alert("DIAG: deliverCtx.ob está vazio, nada pra salvar."); return; }
-      var val = document.getElementById("deliverDate").value;
-      if (!val) { alert("DIAG: campo de data está vazio, nada foi salvo."); return; }
-      var ck = document.getElementById("deliverMonth").value;
-      deliverCtx.ob.deliveries[ck] = { date: val };
-      saveData(state.data);
-      var checkBack = JSON.parse(localStorage.getItem(STORAGE_KEY)).groups
-        .flatMap(function (g) { return g.subgroups; })
-        .flatMap(function (s) { return s.obligations; })
-        .find(function (o) { return o.id === deliverCtx.ob.id; });
-      alert("DIAG: salvo \"" + deliverCtx.ob.name + "\" no mês " + ck + " com data " + val + ".\nConferindo no localStorage: " + (checkBack && checkBack.deliveries[ck] ? "OK, está lá (" + checkBack.deliveries[ck].date + ")" : "NÃO ENCONTRADO!"));
-      closeSheet("sheetDeliver");
-      render();
-      showToast("Entrega de " + monthLabel(ck) + " registrada");
-    } catch (err) {
-      alert("DIAG ERRO: " + err.message + "\n" + (err.stack || ""));
-    }
+    if (!deliverCtx.ob) return;
+    var val = document.getElementById("deliverDate").value;
+    if (!val) { showToast("Escolha uma data"); return; }
+    var ck = cycleKeyOf(todayDate());
+    deliverCtx.ob.deliveries[ck] = { date: val };
+    saveData(state.data);
+    closeSheet("sheetDeliver");
+    render();
+    showToast("Entrega registrada");
   };
   document.getElementById("btnUndoDeliver").onclick = function () {
     if (!deliverCtx.ob) return;
-    var ck = document.getElementById("deliverMonth").value;
+    var ck = cycleKeyOf(todayDate());
     delete deliverCtx.ob.deliveries[ck];
     saveData(state.data);
     closeSheet("sheetDeliver");
