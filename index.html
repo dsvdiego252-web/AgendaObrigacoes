@@ -912,15 +912,24 @@
     refreshDeliverFieldsForMonth(e.target.value);
   };
   document.getElementById("btnSaveDeliver").onclick = function () {
-    if (!deliverCtx.ob) return;
-    var val = document.getElementById("deliverDate").value;
-    if (!val) { showToast("Escolha uma data"); return; }
-    var ck = document.getElementById("deliverMonth").value;
-    deliverCtx.ob.deliveries[ck] = { date: val };
-    saveData(state.data);
-    closeSheet("sheetDeliver");
-    render();
-    showToast("Entrega de " + monthLabel(ck) + " registrada");
+    try {
+      if (!deliverCtx.ob) { alert("DIAG: deliverCtx.ob está vazio, nada pra salvar."); return; }
+      var val = document.getElementById("deliverDate").value;
+      if (!val) { alert("DIAG: campo de data está vazio, nada foi salvo."); return; }
+      var ck = document.getElementById("deliverMonth").value;
+      deliverCtx.ob.deliveries[ck] = { date: val };
+      saveData(state.data);
+      var checkBack = JSON.parse(localStorage.getItem(STORAGE_KEY)).groups
+        .flatMap(function (g) { return g.subgroups; })
+        .flatMap(function (s) { return s.obligations; })
+        .find(function (o) { return o.id === deliverCtx.ob.id; });
+      alert("DIAG: salvo \"" + deliverCtx.ob.name + "\" no mês " + ck + " com data " + val + ".\nConferindo no localStorage: " + (checkBack && checkBack.deliveries[ck] ? "OK, está lá (" + checkBack.deliveries[ck].date + ")" : "NÃO ENCONTRADO!"));
+      closeSheet("sheetDeliver");
+      render();
+      showToast("Entrega de " + monthLabel(ck) + " registrada");
+    } catch (err) {
+      alert("DIAG ERRO: " + err.message + "\n" + (err.stack || ""));
+    }
   };
   document.getElementById("btnUndoDeliver").onclick = function () {
     if (!deliverCtx.ob) return;
