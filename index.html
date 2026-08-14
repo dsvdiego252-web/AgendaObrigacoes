@@ -367,6 +367,7 @@
       tela inicial ajuda bastante.
     </div>
     <button class="btn danger full" id="btnExportData" style="margin-top:16px;">Exportar backup (JSON)</button>
+    <div class="hint" style="margin-top:14px; text-align:center;" id="appVersionLabel"></div>
   </div>
 </div>
 
@@ -375,6 +376,8 @@
 <script>
 (function () {
   "use strict";
+
+  var APP_VERSION = "2026-08-14.6";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1014,6 +1017,7 @@
   document.getElementById("btnSettings").onclick = function () {
     document.getElementById("reminderDays").value = String(state.prefs.reminderDays);
     updateNotifButton();
+    document.getElementById("appVersionLabel").textContent = "Versão do app: " + APP_VERSION;
     openSheet("sheetSettings");
   };
   function updateNotifButton() {
