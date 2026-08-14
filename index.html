@@ -373,6 +373,31 @@
       tela inicial ajuda bastante.
     </div>
     <button class="btn danger full" id="btnExportData" style="margin-top:16px;">Exportar backup (JSON)</button>
+
+    <h3 style="margin-top:22px; font-size:15px;">Sincronizar entre aparelhos</h3>
+    <div class="settings-row">
+      <div>
+        <div class="label">Status</div>
+        <div class="desc" id="syncStatus">Sincronização indisponível</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Código deste aparelho</label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="syncCodeDisplay" readonly style="flex:1; font-weight:700; letter-spacing:1px;" />
+        <button class="btn ghost" id="btnCopySyncCode" style="flex:0 0 auto;">Copiar</button>
+      </div>
+      <div class="hint">Use esse código no outro aparelho para juntar os dados dos dois.</div>
+    </div>
+    <div class="field">
+      <label for="syncCodeInput">Conectar a um código de outro aparelho</label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="syncCodeInput" placeholder="Ex: AB12CD" style="flex:1; text-transform:uppercase;" />
+        <button class="btn primary" id="btnConnectSyncCode" style="flex:0 0 auto;">Conectar</button>
+      </div>
+      <div class="hint">Isso substitui os dados deste aparelho pelos do código informado.</div>
+    </div>
+
     <div class="hint" style="margin-top:14px; text-align:center;" id="appVersionLabel"></div>
   </div>
 </div>
@@ -469,7 +494,33 @@
       });
     });
   }
-  function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+  function saveData(data) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (window.__syncHooks && window.__syncHooks.onLocalSave) window.__syncHooks.onLocalSave(data);
+  }
+
+  // Ponte para o módulo de sincronização (Firebase), carregado à parte no fim
+  // do arquivo. Mantém a sincronização totalmente opcional: se o Firebase
+  // falhar ou não carregar, o app continua funcionando normalmente com o
+  // localStorage, só sem sincronizar entre aparelhos.
+  window.__syncHooks = {
+    onLocalSave: null,
+    getData: function () { return state.data; },
+    applyRemoteData: function (data) {
+      state.data = data;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      render();
+    }
+  };
+
+  // O código de sincronização é local (não depende do Firebase carregar) para
+  // sempre aparecer nas configurações, mesmo se a nuvem estiver inacessível.
+  var SYNC_CODE_KEY = "agenda-obrigacoes-sync-code";
+  var syncCode = localStorage.getItem(SYNC_CODE_KEY);
+  if (!syncCode) {
+    syncCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+    localStorage.setItem(SYNC_CODE_KEY, syncCode);
+  }
 
   function loadPrefs() {
     try {
@@ -1078,6 +1129,7 @@
     document.getElementById("reminderDays").value = String(state.prefs.reminderDays);
     updateNotifButton();
     document.getElementById("appVersionLabel").textContent = "Versão do app: " + APP_VERSION;
+    document.getElementById("syncCodeDisplay").value = syncCode;
     openSheet("sheetSettings");
   };
   function updateNotifButton() {
@@ -1245,6 +1297,164 @@
   }
   setInterval(function () { checkAndNotify(false); }, 30 * 60 * 1000);
 })();
+</script>
+
+<!--
+  Sincronização entre aparelhos (Firebase Firestore). Totalmente opcional e
+  isolada num módulo à parte: se o Firebase não carregar ou der erro, o app
+  continua funcionando normalmente com o localStorage, só sem sincronizar.
+  Os dados de todos os aparelhos com o mesmo "código de sincronização" ficam
+  salvos no mesmo documento do Firestore; a última gravação sempre vence
+  (não há mesclagem automática de edições feitas ao mesmo tempo em dois
+  aparelhos offline).
+-->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+  var firebaseConfig = {
+    apiKey: "AIzaSyCY9E6wWy6cC6cV3Fzg1qCpqxZqE_ismEc",
+    authDomain: "agenda-obrigacoes-39946.firebaseapp.com",
+    projectId: "agenda-obrigacoes-39946",
+    storageBucket: "agenda-obrigacoes-39946.firebasestorage.app",
+    messagingSenderId: "491744116826",
+    appId: "1:491744116826:web:3019beff2e160135c35863"
+  };
+
+  var SYNC_KEY = "agenda-obrigacoes-sync-code";
+
+  function setStatus(text) {
+    var el = document.getElementById("syncStatus");
+    if (el) el.textContent = text;
+  }
+
+  var app, db;
+  try {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+  } catch (e) {
+    setStatus("Sincronização indisponível");
+    console.error("Firebase init falhou", e);
+  }
+
+  // O código já foi gerado/lido pelo script principal (não depende do
+  // Firebase carregar), aqui só reaproveitamos o mesmo valor.
+  var syncCode = localStorage.getItem(SYNC_KEY) || Math.random().toString(36).slice(2, 8).toUpperCase();
+  localStorage.setItem(SYNC_KEY, syncCode);
+
+  var applyingRemote = false;
+  var unsubscribe = null;
+  var ready = false;
+
+  function pushLocal() {
+    if (!db || applyingRemote || !ready) return;
+    setStatus("Sincronizando…");
+    setDoc(doc(db, "agendas", syncCode), {
+      payload: JSON.stringify(window.__syncHooks.getData()),
+      updatedAt: Date.now()
+    }).then(function () {
+      setStatus("Sincronizado ✓");
+    }).catch(function (e) {
+      setStatus("Sem conexão com a nuvem (dados salvos só neste aparelho por enquanto)");
+      console.error("Firestore write falhou", e);
+    });
+  }
+
+  function startListening(code) {
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    unsubscribe = onSnapshot(
+      doc(db, "agendas", code),
+      function (snap) {
+        if (snap.exists() && snap.data().payload) {
+          try {
+            var remoteData = JSON.parse(snap.data().payload);
+            applyingRemote = true;
+            window.__syncHooks.applyRemoteData(remoteData);
+            applyingRemote = false;
+            setStatus("Sincronizado ✓");
+          } catch (e) {
+            console.error("Dado remoto inválido", e);
+          }
+        }
+      },
+      function (err) {
+        setStatus("Sem conexão com a nuvem (dados salvos só neste aparelho por enquanto)");
+        console.error("Firestore listen falhou", err);
+      }
+    );
+  }
+
+  function connectToCode(code) {
+    code = (code || "").trim().toUpperCase();
+    if (!code || !db) return;
+    ready = false;
+    setStatus("Conectando…");
+    syncCode = code;
+    localStorage.setItem(SYNC_KEY, syncCode);
+    var displayEl = document.getElementById("syncCodeDisplay");
+    if (displayEl) displayEl.value = syncCode;
+    getDoc(doc(db, "agendas", syncCode)).then(function (snap) {
+      if (snap.exists() && snap.data().payload) {
+        try {
+          applyingRemote = true;
+          window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload));
+          applyingRemote = false;
+        } catch (e) {}
+      } else {
+        // código novo/vazio: manda os dados atuais deste aparelho pra começar
+        ready = true;
+        pushLocal();
+      }
+      ready = true;
+      startListening(syncCode);
+      setStatus("Sincronizado ✓");
+    }).catch(function (e) {
+      setStatus("Sem conexão com a nuvem (dados salvos só neste aparelho por enquanto)");
+      console.error("Firestore connect falhou", e);
+    });
+  }
+
+  if (db) {
+    setStatus("Conectando…");
+    getDoc(doc(db, "agendas", syncCode)).then(function (snap) {
+      if (snap.exists() && snap.data().payload) {
+        try {
+          applyingRemote = true;
+          window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload));
+          applyingRemote = false;
+        } catch (e) {}
+      }
+      ready = true;
+      startListening(syncCode);
+      if (!snap.exists()) pushLocal();
+      setStatus("Sincronizado ✓");
+    }).catch(function (e) {
+      setStatus("Sem conexão com a nuvem (dados salvos só neste aparelho por enquanto)");
+      console.error("Firestore init read falhou", e);
+    });
+
+    window.__syncHooks.onLocalSave = function () { pushLocal(); };
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target && e.target.id === "btnCopySyncCode") {
+      var input = document.getElementById("syncCodeDisplay");
+      input.select();
+      input.setSelectionRange(0, 99);
+      try {
+        navigator.clipboard.writeText(input.value);
+      } catch (err) {
+        document.execCommand("copy");
+      }
+    }
+    if (e.target && e.target.id === "btnConnectSyncCode") {
+      var codeInput = document.getElementById("syncCodeInput");
+      if (codeInput && codeInput.value.trim()) {
+        connectToCode(codeInput.value);
+        codeInput.value = "";
+      }
+    }
+  });
 </script>
 </body>
 </html>

@@ -24,6 +24,8 @@ App web (PWA) para controlar as obrigações e prazos da rotina de trabalho, com
 - Botões "＋ aba" / "＋ subaba" para organizar outras rotinas além de Rafas.
 - Lembretes locais no celular (dias antes do vencimento, configurável em ⚙️) e aviso diário enquanto uma obrigação estiver atrasada.
 - Botão "Histórico" em cada obrigação mostra os meses anteriores já entregues (data e se foi no prazo ou com atraso) — os dados de meses passados ficam salvos e nunca são apagados automaticamente.
+- Aviso quando uma obrigação tem meses anteriores sem nenhuma entrega registrada (fácil de esquecer, já que o card só mostra o mês atual).
+- Sincronização opcional entre aparelhos via Firebase Firestore (⚙️ → "Sincronizar entre aparelhos") usando um código compartilhado entre os dispositivos.
 - Exportar backup dos dados em JSON pela tela de configurações.
 
 ## Sobre as notificações
@@ -33,3 +35,7 @@ O app usa a API de Notificações do navegador via Service Worker — não depen
 ## Dados
 
 Tudo fica salvo localmente no navegador/app (localStorage) do aparelho. Use "Exportar backup" periodicamente se quiser guardar uma cópia.
+
+## Sincronização entre aparelhos
+
+Cada aparelho gera um "código de sincronização" sozinho (visível em ⚙️). Para juntar os dados de dois aparelhos, cole o código de um deles no campo "Conectar a um código de outro aparelho" do outro — isso substitui os dados locais desse segundo aparelho pelos da nuvem. Depois de conectados, qualquer alteração feita em um aparelho aparece automaticamente no outro (a última gravação sempre vence; não há mesclagem de edições simultâneas feitas offline nos dois ao mesmo tempo). Se o Firebase estiver indisponível (sem internet, projeto mal configurado etc.), o app continua funcionando normalmente só com os dados locais.
