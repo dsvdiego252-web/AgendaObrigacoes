@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agenda-obrigacoes-v1';
+const CACHE_NAME = 'agenda-obrigacoes-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -21,21 +21,21 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Network-first: sempre busca a versão mais nova quando há internet, e só usa o
+// cache como reserva quando o dispositivo está offline. Isso evita que o app
+// fique preso numa versão antiga depois de uma atualização.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 

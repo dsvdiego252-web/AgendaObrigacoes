@@ -916,6 +916,13 @@
 
   // ---------- Service worker ----------
   if ("serviceWorker" in navigator) {
+    var swRefreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (swRefreshing) return;
+      swRefreshing = true;
+      window.location.reload();
+    });
+
     window.addEventListener("load", function () {
       navigator.serviceWorker.register("sw.js").then(function (reg) {
         if (reg.periodicSync) {
@@ -925,6 +932,8 @@
             }
           }).catch(function () {});
         }
+        // Verifica se existe uma versão mais nova do app sempre que a página é aberta/reaberta
+        reg.update().catch(function () {});
       }).catch(function () {});
 
       navigator.serviceWorker.addEventListener("message", function (event) {
@@ -934,7 +943,14 @@
   }
 
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible") checkAndNotify(false);
+    if (document.visibilityState === "visible") {
+      checkAndNotify(false);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistration().then(function (reg) {
+          if (reg) reg.update().catch(function () {});
+        });
+      }
+    }
   });
 
   // ---------- Init ----------
