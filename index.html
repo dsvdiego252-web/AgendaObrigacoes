@@ -211,6 +211,30 @@
   .history-item:last-child { border-bottom: none; }
   .history-month { font-size: 14px; font-weight: 600; }
   .history-empty { text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 13.5px; }
+
+  .dashboard-grid { display: flex; flex-direction: column; gap: 12px; }
+  .dash-card {
+    background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius);
+    padding: 16px; text-align: left; font-family: inherit; cursor: pointer; width: 100%;
+    display: flex; flex-direction: column; gap: 12px; -webkit-tap-highlight-color: transparent;
+  }
+  .dash-card:active { transform: scale(0.985); }
+  .dash-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .dash-card-title { font-size: 16.5px; font-weight: 700; }
+  .dash-card-sub { font-size: 12.5px; color: var(--text-dim); }
+  .dash-bar { display: flex; gap: 2px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--bg-elev); }
+  .dash-bar-seg { border-radius: 3px; min-width: 3px; }
+  .dash-bar-seg.red { background: var(--red); }
+  .dash-bar-seg.gray { background: var(--gray); }
+  .dash-bar-seg.orange { background: var(--orange); }
+  .dash-bar-seg.green { background: var(--green); }
+  .dash-stats { display: flex; gap: 14px; flex-wrap: wrap; }
+  .dash-stat { font-size: 13px; font-weight: 700; }
+  .dash-stat.red { color: var(--red); }
+  .dash-stat.gray { color: var(--gray); }
+  .dash-stat.orange { color: var(--orange); }
+  .dash-stat.green { color: var(--green); }
+  .dash-empty { font-size: 13px; color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -430,7 +454,8 @@
     prefs: loadPrefs(),
     activeGroupId: null,
     activeSubgroupId: null,
-    activeStatusFilter: null
+    activeStatusFilter: null,
+    view: "main"
   };
   if (state.data.groups.length) {
     state.activeGroupId = state.data.groups[0].id;
@@ -470,22 +495,40 @@
 
   function render() {
     renderGroupTabs();
-    renderSubgroupTabs();
-    renderSummaryAndList();
+    document.getElementById("btnAddObligation").style.display = state.view === "summary" ? "none" : "flex";
+    if (state.view === "summary") {
+      document.getElementById("subgroupTabs").innerHTML = "";
+      renderDashboard();
+    } else {
+      renderSubgroupTabs();
+      renderSummaryAndList();
+    }
     renderInstallBanner();
   }
 
   function renderGroupTabs() {
     var el = document.getElementById("groupTabs");
     el.innerHTML = "";
+
+    var summaryChip = document.createElement("button");
+    summaryChip.className = "tab-chip" + (state.view === "summary" ? " active" : "");
+    summaryChip.textContent = "📊 Resumo";
+    summaryChip.onclick = function () {
+      state.view = "summary";
+      state.activeStatusFilter = null;
+      render();
+    };
+    el.appendChild(summaryChip);
+
     state.data.groups.forEach(function (g) {
       var chip = document.createElement("button");
-      chip.className = "tab-chip" + (g.id === state.activeGroupId ? " active" : "");
+      chip.className = "tab-chip" + (state.view === "main" && g.id === state.activeGroupId ? " active" : "");
       chip.textContent = g.name;
       chip.onclick = function () {
         state.activeGroupId = g.id;
         state.activeSubgroupId = g.subgroups.length ? g.subgroups[0].id : null;
         state.activeStatusFilter = null;
+        state.view = "main";
         render();
       };
       el.appendChild(chip);
@@ -495,6 +538,97 @@
     addChip.textContent = "＋ aba";
     addChip.onclick = function () { openGroupSheet("group", null); };
     el.appendChild(addChip);
+  }
+
+  function goToGroup(groupId) {
+    var g = state.data.groups.find(function (x) { return x.id === groupId; });
+    if (!g) return;
+    state.activeGroupId = g.id;
+    state.activeSubgroupId = g.subgroups.length ? g.subgroups[0].id : null;
+    state.activeStatusFilter = null;
+    state.view = "main";
+    render();
+  }
+
+  function renderDashboard() {
+    var summaryEl = document.getElementById("summaryRow");
+    var listEl = document.getElementById("obligationsList");
+    summaryEl.innerHTML = "";
+    listEl.innerHTML = "";
+
+    if (!state.data.groups.length) {
+      listEl.innerHTML = '<div class="empty-state"><div class="big">📊</div>Crie uma aba (empresa/rotina) para ver o resumo aqui.</div>';
+      return;
+    }
+
+    var today = todayDate();
+    var wrap = document.createElement("div");
+    wrap.className = "dashboard-grid";
+
+    state.data.groups.forEach(function (g) {
+      var counts = { overdue: 0, pending: 0, late: 0, on_time: 0 };
+      var total = 0;
+      g.subgroups.forEach(function (sg) {
+        sg.obligations.forEach(function (ob) {
+          counts[getStatus(ob, today)]++;
+          total++;
+        });
+      });
+
+      var card = document.createElement("button");
+      card.type = "button";
+      card.className = "dash-card";
+      card.onclick = function () { goToGroup(g.id); };
+
+      var head = document.createElement("div");
+      head.className = "dash-card-head";
+      var title = document.createElement("div");
+      title.className = "dash-card-title";
+      title.textContent = g.name;
+      var subEl = document.createElement("div");
+      subEl.className = "dash-card-sub";
+      subEl.textContent = g.subgroups.length + " subaba" + (g.subgroups.length === 1 ? "" : "s") + " · " + total + " obrigaç" + (total === 1 ? "ão" : "ões");
+      head.appendChild(title);
+      head.appendChild(subEl);
+      card.appendChild(head);
+
+      if (total === 0) {
+        var empty = document.createElement("div");
+        empty.className = "dash-empty";
+        empty.textContent = "Nenhuma obrigação cadastrada ainda";
+        card.appendChild(empty);
+      } else {
+        var bar = document.createElement("div");
+        bar.className = "dash-bar";
+        [["overdue", "red"], ["pending", "gray"], ["late", "orange"], ["on_time", "green"]].forEach(function (pair) {
+          var count = counts[pair[0]];
+          if (!count) return;
+          var seg = document.createElement("div");
+          seg.className = "dash-bar-seg " + pair[1];
+          seg.style.flex = count;
+          bar.appendChild(seg);
+        });
+        card.appendChild(bar);
+
+        var stats = document.createElement("div");
+        stats.className = "dash-stats";
+        function stat(icon, count, cls) {
+          var s = document.createElement("span");
+          s.className = "dash-stat " + cls;
+          s.textContent = icon + " " + count;
+          return s;
+        }
+        stats.appendChild(stat("🔴", counts.overdue, "red"));
+        stats.appendChild(stat("🕒", counts.pending, "gray"));
+        stats.appendChild(stat("🟠", counts.late, "orange"));
+        stats.appendChild(stat("✅", counts.on_time, "green"));
+        card.appendChild(stats);
+      }
+
+      wrap.appendChild(card);
+    });
+
+    listEl.appendChild(wrap);
   }
 
   function renderSubgroupTabs() {
@@ -665,12 +799,27 @@
   }
 
   // ---------- Sheets ----------
+  // Cada sheet aberta empurra um estado no histórico do navegador, então o botão
+  // "voltar" do Android fecha a sheet em vez de sair do app inteiro. O fechamento
+  // visual acontece sempre pelo popstate, seja o back físico ou um botão da UI.
 
-  function openSheet(id) { document.getElementById(id).classList.add("open"); }
-  function closeSheet(id) { document.getElementById(id).classList.remove("open"); }
+  function openSheet(id) {
+    document.getElementById(id).classList.add("open");
+    history.pushState({ sheet: id }, "");
+  }
+  function closeSheet(id) {
+    if (document.getElementById(id).classList.contains("open")) {
+      history.back();
+    }
+  }
+  window.addEventListener("popstate", function () {
+    document.querySelectorAll(".backdrop.open").forEach(function (bd) {
+      bd.classList.remove("open");
+    });
+  });
 
   document.querySelectorAll(".backdrop").forEach(function (bd) {
-    bd.addEventListener("click", function (e) { if (e.target === bd) bd.classList.remove("open"); });
+    bd.addEventListener("click", function (e) { if (e.target === bd) closeSheet(bd.id); });
   });
 
   // Nova obrigação
