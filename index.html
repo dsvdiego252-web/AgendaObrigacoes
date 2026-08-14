@@ -292,6 +292,10 @@
     <h3 id="deliverTitle">Marcar entrega</h3>
     <div class="hint" id="deliverMonthLabel" style="margin: -6px 0 14px; font-size: 13px;"></div>
     <div class="field">
+      <label for="deliverRefMonth">Competência (referente a qual mês)</label>
+      <select id="deliverRefMonth"></select>
+    </div>
+    <div class="field">
       <label for="deliverDate">Data em que foi entregue</label>
       <input type="date" id="deliverDate" />
     </div>
@@ -776,6 +780,9 @@
     var badgeText = STATUS_LABEL[status];
     if (delivery && (status === "on_time" || status === "late")) {
       badgeText += " · " + fmtDateBR(parseISODate(delivery.date));
+      if (delivery.ref && delivery.ref !== ck) {
+        badgeText += " · competência " + monthLabel(delivery.ref);
+      }
     }
     badge.textContent = STATUS_ICON[status] + " " + badgeText;
     card.appendChild(badge);
@@ -863,18 +870,38 @@
     showToast("Obrigação adicionada");
   };
 
-  // Marcar entrega — sempre resolve o ciclo do mês atual, que é o que o card
-  // exibido na tela está mostrando. O "mês de referência" era uma gaveta
-  // separada que confundia (o card continuava vermelho mesmo depois de marcar
-  // um mês passado como entregue), então foi removido.
+  // Marcar entrega — SEMPRE resolve o ciclo do mês atual (o que o card exibido
+  // na tela está mostrando). "Competência" é só uma etiqueta informativa (ex:
+  // documento referente a julho, entregue em agosto) — não cria uma gaveta
+  // separada, então marcar como entregue sempre deixa o card atual verde/laranja.
   var deliverCtx = { ob: null, sub: null };
+  function recentCycleKeys(monthsBack) {
+    var today = todayDate();
+    var keys = [];
+    for (var i = 0; i <= monthsBack; i++) {
+      var d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      keys.push(cycleKeyOf(d));
+    }
+    return keys;
+  }
   function openDeliverSheet(ob, sub) {
     deliverCtx.ob = ob; deliverCtx.sub = sub;
     document.getElementById("deliverTitle").textContent = ob.name;
     var ck = cycleKeyOf(todayDate());
     var due = dueDateOf(ob.dueDay, todayDate().getFullYear(), todayDate().getMonth());
     var delivery = ob.deliveries[ck];
-    document.getElementById("deliverMonthLabel").textContent = "Referente a " + monthLabel(ck) + " · vence dia " + ob.dueDay + " · " + fmtDateBR(due);
+    document.getElementById("deliverMonthLabel").textContent = "Vence dia " + ob.dueDay + " · " + fmtDateBR(due);
+
+    var select = document.getElementById("deliverRefMonth");
+    select.innerHTML = "";
+    recentCycleKeys(11).forEach(function (rck) {
+      var opt = document.createElement("option");
+      opt.value = rck;
+      opt.textContent = monthLabel(rck);
+      select.appendChild(opt);
+    });
+    select.value = (delivery && delivery.ref) ? delivery.ref : ck;
+
     document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
     document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
     openSheet("sheetDeliver");
@@ -884,7 +911,8 @@
     var val = document.getElementById("deliverDate").value;
     if (!val) { showToast("Escolha uma data"); return; }
     var ck = cycleKeyOf(todayDate());
-    deliverCtx.ob.deliveries[ck] = { date: val };
+    var ref = document.getElementById("deliverRefMonth").value;
+    deliverCtx.ob.deliveries[ck] = { date: val, ref: ref };
     saveData(state.data);
     closeSheet("sheetDeliver");
     render();
@@ -935,6 +963,9 @@
       var dateEl = document.createElement("div");
       dateEl.className = "ob-due";
       dateEl.textContent = "Entregue em " + fmtDateBR(deliveredDate) + " · vencia dia " + ob.dueDay;
+      if (delivery.ref && delivery.ref !== ck) {
+        dateEl.textContent += " · competência " + monthLabel(delivery.ref);
+      }
       left.appendChild(monthEl);
       left.appendChild(dateEl);
 
