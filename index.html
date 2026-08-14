@@ -294,6 +294,7 @@
     <div class="field">
       <label for="deliverMonth">Mês de referência</label>
       <select id="deliverMonth"></select>
+      <div class="hint" id="deliverMonthWarning" style="display:none; color: var(--orange);">Isso registra a entrega desse mês específico — o status mostrado no card continua sendo sempre o do mês atual.</div>
     </div>
     <div class="field">
       <label for="deliverDate">Data em que foi entregue</label>
@@ -879,8 +880,13 @@
     var delivery = deliverCtx.ob.deliveries[ck];
     var due = dueDateOf(deliverCtx.ob.dueDay, parseInt(ck.split("-")[0], 10), parseInt(ck.split("-")[1], 10) - 1);
     document.getElementById("deliverMonthLabel").textContent = "Vence dia " + deliverCtx.ob.dueDay + " · " + fmtDateBR(due);
-    document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
+    // Se o mês escolhido for o mês atual, sugere hoje; se for um mês passado sem
+    // entrega registrada, sugere o próprio dia de vencimento daquele mês em vez de
+    // hoje — evita salvar sem querer uma data de hoje dentro de um mês antigo.
+    var defaultDate = ck === cycleKeyOf(todayDate()) ? toISODate(todayDate()) : toISODate(due);
+    document.getElementById("deliverDate").value = delivery ? delivery.date : defaultDate;
     document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
+    document.getElementById("deliverMonthWarning").style.display = ck === cycleKeyOf(todayDate()) ? "none" : "block";
   }
   function openDeliverSheet(ob, sub) {
     deliverCtx.ob = ob; deliverCtx.sub = sub;
