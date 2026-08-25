@@ -450,7 +450,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-08-25.2";
+  var APP_VERSION = "2026-08-25.3";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -667,25 +667,35 @@
     return g.subgroups.find(function (s) { return s.id === state.activeSubgroupId; });
   }
 
-  // Todas as ocorrências do dia da semana da obrigação dentro do mês de
-  // "today" (ex: todas as segundas-feiras de agosto), passadas, hoje e
-  // futuras — usado pra listar cada uma individualmente no card.
-  function getWeeklyOccurrencesInMonth(ob, today) {
+  // Obrigações semanais e diárias mostram uma lista com cada ocorrência do
+  // mês atual (cada dia da semana escolhido, ou cada dia do mês), em vez de
+  // só "esta semana"/"hoje" — fica fácil ver e marcar cada uma. Só mensal
+  // continua sendo uma ocorrência única por mês.
+  function isMultiOccurrence(ob) {
+    var freq = ob.frequency || "monthly";
+    return freq === "weekly" || freq === "daily";
+  }
+
+  // Todas as ocorrências dentro do mês de "today": para semanal, cada data
+  // com o dia da semana escolhido; para diária, todo santo dia do mês.
+  // Passadas, hoje e futuras — usado pra listar cada uma individualmente.
+  function getOccurrencesInMonth(ob, today) {
     var year = today.getFullYear(), month = today.getMonth();
     var dim = daysInMonth(year, month);
+    var freq = ob.frequency || "monthly";
     var occ = [];
     for (var day = 1; day <= dim; day++) {
       var d = new Date(year, month, day);
-      if (d.getDay() === ob.weekday) occ.push(d);
+      if (freq === "daily" || d.getDay() === ob.weekday) occ.push(d);
     }
     return occ;
   }
 
-  // Status geral de uma obrigação semanal: o pior status entre as ocorrências
-  // deste mês que já venceram (passadas ou hoje) — se qualquer uma estiver
+  // Status geral (semanal/diária): o pior status entre as ocorrências deste
+  // mês que já venceram (passadas ou hoje) — se qualquer uma estiver
   // atrasada, o card inteiro aparece atrasado, mesmo com outras em dia.
-  function getWeeklyAggregateStatus(ob, today) {
-    var occ = getWeeklyOccurrencesInMonth(ob, today).filter(function (d) { return d.getTime() <= today.getTime(); });
+  function getMultiOccurrenceAggregateStatus(ob, today) {
+    var occ = getOccurrencesInMonth(ob, today).filter(function (d) { return d.getTime() <= today.getTime(); });
     if (!occ.length) return "pending";
     var anyOverdue = false, anyPendingToday = false, anyLate = false;
     occ.forEach(function (d) {
@@ -703,11 +713,11 @@
     return anyLate ? "late" : "on_time";
   }
 
-  // Qual ocorrência do mês uma notificação semanal deve citar: a mais antiga
-  // ainda sem entrega (se houver alguma vencida ou vencendo hoje); senão a
-  // próxima ocorrência futura do mês; senão null (nada a avisar).
-  function getWeeklyNotifyTarget(ob, today) {
-    var occ = getWeeklyOccurrencesInMonth(ob, today);
+  // Qual ocorrência do mês uma notificação semanal/diária deve citar: a mais
+  // antiga ainda sem entrega (se houver alguma vencida ou vencendo hoje);
+  // senão a próxima ocorrência futura do mês; senão null (nada a avisar).
+  function getMultiOccurrenceNotifyTarget(ob, today) {
+    var occ = getOccurrencesInMonth(ob, today);
     for (var i = 0; i < occ.length; i++) {
       if (occ[i].getTime() > today.getTime()) break;
       if (!ob.deliveries[toISODate(occ[i])]) return occ[i];
@@ -719,7 +729,7 @@
   }
 
   function getStatus(obligation, today) {
-    if ((obligation.frequency || "monthly") === "weekly") return getWeeklyAggregateStatus(obligation, today);
+    if (isMultiOccurrence(obligation)) return getMultiOccurrenceAggregateStatus(obligation, today);
     var info = getCycleInfo(obligation, today);
     var delivery = obligation.deliveries[info.cycleKey];
     if (delivery) {
@@ -1055,10 +1065,10 @@
     var ck = getCycleInfo(ob, todayDate()).cycleKey;
     var delivery = ob.deliveries[ck];
     var badgeText = STATUS_LABEL[status];
-    if ((ob.frequency || "monthly") === "weekly") {
-      // Semanal: o badge do topo é só um resumo geral (o pior status entre as
-      // ocorrências do mês) — os detalhes de cada dia aparecem na listinha
-      // abaixo, então não faz sentido colar data/competência aqui.
+    if (isMultiOccurrence(ob)) {
+      // Semanal/diária: o badge do topo é só um resumo geral (o pior status
+      // entre as ocorrências do mês) — os detalhes de cada dia aparecem na
+      // listinha abaixo, então não faz sentido colar data/competência aqui.
     } else if (delivery && (status === "on_time" || status === "late")) {
       badgeText += " · " + fmtDateBR(parseISODate(delivery.date));
       if (delivery.ref && delivery.ref !== ck) {
@@ -1081,12 +1091,13 @@
     var actions = document.createElement("div");
     actions.className = "ob-actions";
 
-    if ((ob.frequency || "monthly") === "weekly") {
-      // Cada dia da semana dentro do mês atual vira sua própria linha
-      // marcável, em vez de um único botão que só cobre "essa semana".
+    if (isMultiOccurrence(ob)) {
+      // Cada ocorrência dentro do mês atual (cada dia da semana escolhido, ou
+      // cada dia do mês) vira sua própria linha marcável, em vez de um único
+      // botão que só cobre "esta semana"/"hoje".
       var list = document.createElement("div");
       list.className = "week-occ-list";
-      getWeeklyOccurrencesInMonth(ob, todayDate()).forEach(function (d) {
+      getOccurrencesInMonth(ob, todayDate()).forEach(function (d) {
         var occCk = toISODate(d);
         var occDelivery = ob.deliveries[occCk];
         var occStatus;
@@ -1467,10 +1478,9 @@
         sub.obligations.forEach(function (ob) {
           var status = getStatus(ob, today);
           if (status === "on_time" || status === "late") return;
-          var isWeekly = (ob.frequency || "monthly") === "weekly";
           var due, cycleKeyForTag;
-          if (isWeekly) {
-            var target = getWeeklyNotifyTarget(ob, today);
+          if (isMultiOccurrence(ob)) {
+            var target = getMultiOccurrenceNotifyTarget(ob, today);
             if (!target) return;
             due = target;
             cycleKeyForTag = toISODate(target);
