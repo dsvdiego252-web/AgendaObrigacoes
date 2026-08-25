@@ -450,7 +450,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-08-25.3";
+  var APP_VERSION = "2026-08-25.4";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1624,13 +1624,23 @@
   var applyingRemote = false;
   var unsubscribe = null;
   var ready = false;
+  var pushDebounceTimer = null;
 
-  function pushLocal() {
+  // Marca de tempo do último dado LOCAL que já conhecemos (seja porque
+  // acabamos de salvar, seja porque acabamos de aplicar algo vindo da
+  // nuvem). Um snapshot da nuvem só é aplicado se for mais novo que isso —
+  // sem essa checagem, um eco atrasado da própria gravação (ou uma
+  // atualização antiga chegando fora de ordem) podia sobrescrever edições
+  // mais recentes feitas em sequência rápida, fazendo entregas já marcadas
+  // "voltarem" a aparecer como atrasadas.
+  var lastKnownUpdatedAt = 0;
+
+  function pushLocalNow(ts) {
     if (!db || applyingRemote || !ready) return;
     setStatus("Sincronizando…");
     setDoc(doc(db, "agendas", syncCode), {
       payload: JSON.stringify(window.__syncHooks.getData()),
-      updatedAt: Date.now()
+      updatedAt: ts
     }).then(function () {
       setStatus("Sincronizado ✓");
     }).catch(function (e) {
@@ -1639,17 +1649,32 @@
     });
   }
 
+  // Agrupa gravações feitas em sequência rápida (ex: marcar várias semanas
+  // seguidas) numa só escrita, reduzindo o risco de corrida e de gastar
+  // gravações à toa. O carimbo de tempo é fixado JÁ, na hora do save local —
+  // não quando a escrita de fato sai — pra nenhum snapshot antigo conseguir
+  // "passar na frente" de uma edição local ainda não enviada.
+  function pushLocal() {
+    var ts = Date.now();
+    lastKnownUpdatedAt = ts;
+    if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
+    pushDebounceTimer = setTimeout(function () { pushLocalNow(ts); }, 400);
+  }
+
   function startListening(code) {
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     unsubscribe = onSnapshot(
       doc(db, "agendas", code),
       function (snap) {
         if (snap.exists() && snap.data().payload) {
+          var remoteUpdatedAt = snap.data().updatedAt || 0;
+          if (remoteUpdatedAt < lastKnownUpdatedAt) return;
           try {
             var remoteData = JSON.parse(snap.data().payload);
             applyingRemote = true;
             window.__syncHooks.applyRemoteData(remoteData);
             applyingRemote = false;
+            lastKnownUpdatedAt = remoteUpdatedAt;
             setStatus("Sincronizado ✓");
           } catch (e) {
             console.error("Dado remoto inválido", e);
@@ -1667,6 +1692,7 @@
     code = (code || "").trim().toUpperCase();
     if (!code || !db) return;
     ready = false;
+    lastKnownUpdatedAt = 0;
     setStatus("Conectando…");
     syncCode = code;
     localStorage.setItem(SYNC_KEY, syncCode);
@@ -1678,13 +1704,15 @@
           applyingRemote = true;
           window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload));
           applyingRemote = false;
+          lastKnownUpdatedAt = snap.data().updatedAt || Date.now();
         } catch (e) {}
+        ready = true;
       } else {
         // código novo/vazio: manda os dados atuais deste aparelho pra começar
         ready = true;
-        pushLocal();
+        lastKnownUpdatedAt = Date.now();
+        pushLocalNow(lastKnownUpdatedAt);
       }
-      ready = true;
       startListening(syncCode);
       setStatus("Sincronizado ✓");
     }).catch(function (e) {
@@ -1701,11 +1729,15 @@
           applyingRemote = true;
           window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload));
           applyingRemote = false;
+          lastKnownUpdatedAt = snap.data().updatedAt || Date.now();
         } catch (e) {}
       }
       ready = true;
       startListening(syncCode);
-      if (!snap.exists()) pushLocal();
+      if (!snap.exists()) {
+        lastKnownUpdatedAt = Date.now();
+        pushLocalNow(lastKnownUpdatedAt);
+      }
       setStatus("Sincronizado ✓");
     }).catch(function (e) {
       setStatus("Sem conexão com a nuvem (dados salvos só neste aparelho por enquanto)");
