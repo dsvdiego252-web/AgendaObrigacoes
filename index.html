@@ -222,7 +222,7 @@
   .dashboard-grid { display: flex; flex-direction: column; gap: 12px; }
   .dash-card {
     background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius);
-    padding: 16px; text-align: left; font-family: inherit; cursor: pointer; width: 100%;
+    padding: 16px; text-align: left; font-family: inherit; cursor: pointer; width: 100%; color: var(--text);
     display: flex; flex-direction: column; gap: 12px; -webkit-tap-highlight-color: transparent;
   }
   .dash-card:active { transform: scale(0.985); }
@@ -253,6 +253,14 @@
   .dash-stat.green { color: var(--green); }
   .dash-empty { font-size: 13px; color: var(--text-dim); }
   .dash-missed-note { font-size: 12px; font-weight: 600; color: var(--orange); }
+
+  .freq-options { display: flex; gap: 8px; }
+  .freq-chip {
+    flex: 1; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--card-border);
+    background: var(--card); color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: inherit; text-align: center;
+  }
+  .freq-chip.active { background: var(--accent); border-color: var(--accent); color: white; }
 </style>
 </head>
 <body>
@@ -284,10 +292,31 @@
       <input type="text" id="obName" placeholder="Ex: SPED-ICMS" />
     </div>
     <div class="field">
+      <label>Frequência</label>
+      <div class="freq-options" id="obFreqOptions">
+        <button type="button" class="freq-chip active" data-freq="monthly">Mensal</button>
+        <button type="button" class="freq-chip" data-freq="weekly">Semanal</button>
+        <button type="button" class="freq-chip" data-freq="daily">Diária</button>
+      </div>
+    </div>
+    <div class="field" id="obDueDayField">
       <label for="obDueDay">Vencimento (dia do mês)</label>
       <input type="number" id="obDueDay" min="1" max="31" placeholder="Ex: 10" />
       <div class="hint">Se o mês tiver menos dias que o informado, o app usa o último dia do mês.</div>
     </div>
+    <div class="field" id="obWeekdayField" style="display:none;">
+      <label for="obWeekday">Dia da semana</label>
+      <select id="obWeekday">
+        <option value="1">Segunda-feira</option>
+        <option value="2">Terça-feira</option>
+        <option value="3">Quarta-feira</option>
+        <option value="4">Quinta-feira</option>
+        <option value="5">Sexta-feira</option>
+        <option value="6">Sábado</option>
+        <option value="0">Domingo</option>
+      </select>
+    </div>
+    <div class="hint" id="obDailyHint" style="display:none; margin: -6px 0 14px;">Essa obrigação vence todos os dias.</div>
     <button class="btn primary full" id="btnSaveObligation">Salvar obrigação</button>
   </div>
 </div>
@@ -298,7 +327,7 @@
     <div class="handle"></div>
     <h3 id="deliverTitle">Marcar entrega</h3>
     <div class="hint" id="deliverMonthLabel" style="margin: -6px 0 14px; font-size: 13px;"></div>
-    <div class="field">
+    <div class="field" id="deliverRefMonthField">
       <label for="deliverRefMonth">Competência (referente a qual mês)</label>
       <select id="deliverRefMonth"></select>
     </div>
@@ -408,7 +437,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-08-14.13";
+  var APP_VERSION = "2026-08-25.1";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -435,8 +464,64 @@
   }
   function toISODate(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
 
+  var WEEKDAY_NAMES = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+
+  // Ciclo atual de uma obrigação: qual é a "chave" (identifica a ocorrência
+  // atual nas entregas) e qual a data de vencimento dessa ocorrência. Mensal
+  // (padrão, compatível com dados antigos) usa "AAAA-MM" e o dia do mês.
+  // Semanal usa a data (AAAA-MM-DD) da ocorrência do dia da semana escolhido
+  // dentro da semana atual (semana começando na segunda). Diária usa a data
+  // de hoje — cada dia é o seu próprio ciclo.
+  function getCycleInfo(ob, today) {
+    var freq = ob.frequency || "monthly";
+    if (freq === "daily") {
+      return { cycleKey: toISODate(today), dueDate: today };
+    }
+    if (freq === "weekly") {
+      var jsDay = today.getDay();
+      var mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+      var monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() + mondayOffset);
+      var targetOffset = ob.weekday === 0 ? 6 : ob.weekday - 1;
+      var due = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + targetOffset);
+      due.setHours(0, 0, 0, 0);
+      return { cycleKey: toISODate(due), dueDate: due };
+    }
+    var ck = cycleKeyOf(today);
+    var due2 = dueDateOf(ob.dueDay, today.getFullYear(), today.getMonth());
+    return { cycleKey: ck, dueDate: due2 };
+  }
+
+  // Data de vencimento de uma entrega já registrada (a partir da chave do
+  // ciclo salva em deliveries) — para mensal a chave é "AAAA-MM" e usa o dia
+  // do mês da obrigação; para semanal/diária a própria chave já é a data.
+  function dueDateForCycleKey(ob, ck) {
+    var freq = ob.frequency || "monthly";
+    if (freq === "monthly") {
+      var parts = ck.split("-");
+      return dueDateOf(ob.dueDay, parseInt(parts[0], 10), parseInt(parts[1], 10) - 1);
+    }
+    return parseISODate(ck);
+  }
+
+  // Rótulo amigável de um ciclo específico de uma obrigação (para badges,
+  // histórico, notificações). Mensal mostra o nome do mês; semanal/diária
+  // mostram a data por extenso.
+  function cycleLabel(ob, ck) {
+    var freq = ob.frequency || "monthly";
+    if (freq === "monthly") return monthLabel(ck);
+    if (freq === "weekly") return "semana de " + fmtDateBR(parseISODate(ck));
+    return fmtDateBR(parseISODate(ck));
+  }
+
+  function frequencyDueText(ob) {
+    var freq = ob.frequency || "monthly";
+    if (freq === "daily") return "Todos os dias";
+    if (freq === "weekly") return "Toda " + WEEKDAY_NAMES[ob.weekday].toLowerCase();
+    return "Vence dia " + ob.dueDay;
+  }
+
   function defaultData() {
-    function ob(name, dueDay) { return { id: uid(), name: name, dueDay: dueDay, deliveries: {}, createdCk: cycleKeyOf(todayDate()) }; }
+    function ob(name, dueDay) { return { id: uid(), name: name, dueDay: dueDay, frequency: "monthly", deliveries: {}, createdCk: cycleKeyOf(todayDate()) }; }
     return {
       groups: [
         {
@@ -560,21 +645,34 @@
   }
 
   function getStatus(obligation, today) {
-    var ck = cycleKeyOf(today);
-    var due = dueDateOf(obligation.dueDay, today.getFullYear(), today.getMonth());
-    var delivery = obligation.deliveries[ck];
+    var info = getCycleInfo(obligation, today);
+    var delivery = obligation.deliveries[info.cycleKey];
     if (delivery) {
       var deliveredDate = parseISODate(delivery.date);
-      return deliveredDate.getTime() <= due.getTime() ? "on_time" : "late";
+      return deliveredDate.getTime() <= info.dueDate.getTime() ? "on_time" : "late";
     }
-    return today.getTime() > due.getTime() ? "overdue" : "pending";
+    return today.getTime() > info.dueDate.getTime() ? "overdue" : "pending";
   }
 
-  // Meses passados (antes do mês atual, desde que a obrigação existe) sem
-  // nenhuma entrega registrada — fica fácil esquecer um mês e nunca mais
-  // reparar, já que o card só mostra o status do mês atual.
+  // Ciclos passados (meses ou semanas, desde que a obrigação existe) sem
+  // nenhuma entrega registrada — fica fácil esquecer e nunca mais reparar, já
+  // que o card só mostra o status do ciclo atual. Não se aplica a obrigações
+  // diárias (geraria um aviso praticamente todo dia, sem utilidade real).
   function getMissedPastCycles(ob, today) {
+    var freq = ob.frequency || "monthly";
+    if (freq === "daily") return [];
     var missed = [];
+    if (freq === "weekly") {
+      var currentDue = getCycleInfo(ob, today).dueDate;
+      for (var w = 1; w <= 12; w++) {
+        var d = new Date(currentDue.getFullYear(), currentDue.getMonth(), currentDue.getDate() - 7 * w);
+        var wck = toISODate(d);
+        if (ob.createdCk && wck < ob.createdCk) break;
+        if (!ob.deliveries[wck]) missed.push(wck);
+      }
+      missed.reverse();
+      return missed;
+    }
     var cursor = new Date(today.getFullYear(), today.getMonth(), 1);
     for (var i = 0; i < 24; i++) {
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
@@ -792,7 +890,7 @@
     var withStatus = sub.obligations.map(function (ob) {
       var status = getStatus(ob, today);
       counts[status]++;
-      return { ob: ob, status: status, due: dueDateOf(ob.dueDay, today.getFullYear(), today.getMonth()) };
+      return { ob: ob, status: status, due: getCycleInfo(ob, today).dueDate };
     });
 
     withStatus.sort(function (a, b) {
@@ -850,7 +948,7 @@
     name.textContent = ob.name;
     var dueLine = document.createElement("div");
     dueLine.className = "ob-due";
-    dueLine.textContent = "Vence dia " + ob.dueDay + " · " + fmtDateBR(due);
+    dueLine.textContent = frequencyDueText(ob) + " · " + fmtDateBR(due);
     left.appendChild(name);
     left.appendChild(dueLine);
 
@@ -873,7 +971,7 @@
 
     var badge = document.createElement("div");
     badge.className = "status-badge status-" + status;
-    var ck = cycleKeyOf(todayDate());
+    var ck = getCycleInfo(ob, todayDate()).cycleKey;
     var delivery = ob.deliveries[ck];
     var badgeText = STATUS_LABEL[status];
     if (delivery && (status === "on_time" || status === "late")) {
@@ -890,7 +988,7 @@
       var missedWarn = document.createElement("button");
       missedWarn.type = "button";
       missedWarn.className = "missed-warning";
-      missedWarn.textContent = "⚠️ " + missedMonthsText(missed) + " (" + missed.map(monthLabel).join(", ") + ")";
+      missedWarn.textContent = "⚠️ " + missedMonthsText(ob, missed) + " (" + missed.map(function (ck) { return cycleLabel(ob, ck); }).join(", ") + ")";
       missedWarn.onclick = function () { openHistorySheet(ob); };
       card.appendChild(missedWarn);
     }
@@ -955,12 +1053,27 @@
   });
 
   // Nova obrigação
+  var obFreq = "monthly";
+  function setObFreq(freq) {
+    obFreq = freq;
+    document.querySelectorAll("#obFreqOptions .freq-chip").forEach(function (chip) {
+      chip.classList.toggle("active", chip.getAttribute("data-freq") === freq);
+    });
+    document.getElementById("obDueDayField").style.display = freq === "monthly" ? "block" : "none";
+    document.getElementById("obWeekdayField").style.display = freq === "weekly" ? "block" : "none";
+    document.getElementById("obDailyHint").style.display = freq === "daily" ? "block" : "none";
+  }
+  document.querySelectorAll("#obFreqOptions .freq-chip").forEach(function (chip) {
+    chip.onclick = function () { setObFreq(chip.getAttribute("data-freq")); };
+  });
   document.getElementById("btnAddObligation").onclick = function () {
     var sub = getActiveSubgroup();
     if (!sub) { showToast("Crie uma aba e subaba primeiro"); return; }
     document.getElementById("obSheetTitle").textContent = "Nova obrigação em " + sub.name;
     document.getElementById("obName").value = "";
     document.getElementById("obDueDay").value = "";
+    document.getElementById("obWeekday").value = "1";
+    setObFreq("monthly");
     openSheet("sheetObligation");
     setTimeout(function () { document.getElementById("obName").focus(); }, 200);
   };
@@ -968,20 +1081,27 @@
     var sub = getActiveSubgroup();
     if (!sub) return;
     var name = document.getElementById("obName").value.trim();
-    var dueDay = parseInt(document.getElementById("obDueDay").value, 10);
     if (!name) { showToast("Informe o nome da obrigação"); return; }
-    if (!dueDay || dueDay < 1 || dueDay > 31) { showToast("Informe um dia de vencimento válido (1-31)"); return; }
-    sub.obligations.push({ id: uid(), name: name, dueDay: dueDay, deliveries: {}, createdCk: cycleKeyOf(todayDate()) });
+    var newOb = { id: uid(), name: name, frequency: obFreq, deliveries: {}, createdCk: cycleKeyOf(todayDate()) };
+    if (obFreq === "monthly") {
+      var dueDay = parseInt(document.getElementById("obDueDay").value, 10);
+      if (!dueDay || dueDay < 1 || dueDay > 31) { showToast("Informe um dia de vencimento válido (1-31)"); return; }
+      newOb.dueDay = dueDay;
+    } else if (obFreq === "weekly") {
+      newOb.weekday = parseInt(document.getElementById("obWeekday").value, 10);
+    }
+    sub.obligations.push(newOb);
     saveData(state.data);
     closeSheet("sheetObligation");
     render();
     showToast("Obrigação adicionada");
   };
 
-  // Marcar entrega — SEMPRE resolve o ciclo do mês atual (o que o card exibido
-  // na tela está mostrando). "Competência" é só uma etiqueta informativa (ex:
-  // documento referente a julho, entregue em agosto) — não cria uma gaveta
-  // separada, então marcar como entregue sempre deixa o card atual verde/laranja.
+  // Marcar entrega — SEMPRE resolve o ciclo atual (o que o card exibido na
+  // tela está mostrando). "Competência" é só uma etiqueta informativa (ex:
+  // documento referente a julho, entregue em agosto), disponível apenas para
+  // obrigações mensais — não cria uma gaveta separada, então marcar como
+  // entregue sempre deixa o card atual verde/laranja.
   var deliverCtx = { ob: null, sub: null };
   function recentCycleKeys(monthsBack) {
     var today = todayDate();
@@ -995,20 +1115,25 @@
   function openDeliverSheet(ob, sub) {
     deliverCtx.ob = ob; deliverCtx.sub = sub;
     document.getElementById("deliverTitle").textContent = ob.name;
-    var ck = cycleKeyOf(todayDate());
-    var due = dueDateOf(ob.dueDay, todayDate().getFullYear(), todayDate().getMonth());
+    var info = getCycleInfo(ob, todayDate());
+    var ck = info.cycleKey;
+    var due = info.dueDate;
     var delivery = ob.deliveries[ck];
-    document.getElementById("deliverMonthLabel").textContent = "Vence dia " + ob.dueDay + " · " + fmtDateBR(due);
+    document.getElementById("deliverMonthLabel").textContent = frequencyDueText(ob) + " · " + fmtDateBR(due);
 
-    var select = document.getElementById("deliverRefMonth");
-    select.innerHTML = "";
-    recentCycleKeys(11).forEach(function (rck) {
-      var opt = document.createElement("option");
-      opt.value = rck;
-      opt.textContent = monthLabel(rck);
-      select.appendChild(opt);
-    });
-    select.value = (delivery && delivery.ref) ? delivery.ref : ck;
+    var isMonthly = (ob.frequency || "monthly") === "monthly";
+    document.getElementById("deliverRefMonthField").style.display = isMonthly ? "block" : "none";
+    if (isMonthly) {
+      var select = document.getElementById("deliverRefMonth");
+      select.innerHTML = "";
+      recentCycleKeys(11).forEach(function (rck) {
+        var opt = document.createElement("option");
+        opt.value = rck;
+        opt.textContent = monthLabel(rck);
+        select.appendChild(opt);
+      });
+      select.value = (delivery && delivery.ref) ? delivery.ref : ck;
+    }
 
     document.getElementById("deliverDate").value = delivery ? delivery.date : toISODate(todayDate());
     document.getElementById("btnUndoDeliver").style.display = delivery ? "block" : "none";
@@ -1018,9 +1143,11 @@
     if (!deliverCtx.ob) return;
     var val = document.getElementById("deliverDate").value;
     if (!val) { showToast("Escolha uma data"); return; }
-    var ck = cycleKeyOf(todayDate());
-    var ref = document.getElementById("deliverRefMonth").value;
-    deliverCtx.ob.deliveries[ck] = { date: val, ref: ref };
+    var ck = getCycleInfo(deliverCtx.ob, todayDate()).cycleKey;
+    var isMonthly = (deliverCtx.ob.frequency || "monthly") === "monthly";
+    var record = { date: val };
+    if (isMonthly) record.ref = document.getElementById("deliverRefMonth").value;
+    deliverCtx.ob.deliveries[ck] = record;
     saveData(state.data);
     closeSheet("sheetDeliver");
     render();
@@ -1028,7 +1155,7 @@
   };
   document.getElementById("btnUndoDeliver").onclick = function () {
     if (!deliverCtx.ob) return;
-    var ck = cycleKeyOf(todayDate());
+    var ck = getCycleInfo(deliverCtx.ob, todayDate()).cycleKey;
     delete deliverCtx.ob.deliveries[ck];
     saveData(state.data);
     closeSheet("sheetDeliver");
@@ -1043,9 +1170,11 @@
     var monthIndex = parseInt(parts[1], 10) - 1;
     return MONTH_NAMES[monthIndex] + " de " + parts[0];
   }
-  function missedMonthsText(missed) {
+  function missedMonthsText(ob, missed) {
     var n = missed.length;
-    return n + (n > 1 ? " meses anteriores" : " mês anterior") + " sem registro";
+    var unit = (ob.frequency === "weekly") ? "semana" : "mês";
+    var unitPlural = (ob.frequency === "weekly") ? "semanas anteriores" : "meses anteriores";
+    return n + (n > 1 ? " " + unitPlural : " " + unit + " anterior") + " sem registro";
   }
   function openHistorySheet(ob) {
     document.getElementById("historyTitle").textContent = "Histórico · " + ob.name;
@@ -1059,10 +1188,7 @@
     }
     keys.forEach(function (ck) {
       var delivery = ob.deliveries[ck];
-      var parts = ck.split("-");
-      var year = parseInt(parts[0], 10);
-      var monthIndex = parseInt(parts[1], 10) - 1;
-      var due = dueDateOf(ob.dueDay, year, monthIndex);
+      var due = dueDateForCycleKey(ob, ck);
       var deliveredDate = parseISODate(delivery.date);
       var status = deliveredDate.getTime() <= due.getTime() ? "on_time" : "late";
 
@@ -1071,10 +1197,10 @@
       var left = document.createElement("div");
       var monthEl = document.createElement("div");
       monthEl.className = "history-month";
-      monthEl.textContent = monthLabel(ck);
+      monthEl.textContent = cycleLabel(ob, ck);
       var dateEl = document.createElement("div");
       dateEl.className = "ob-due";
-      dateEl.textContent = "Entregue em " + fmtDateBR(deliveredDate) + " · vencia dia " + ob.dueDay;
+      dateEl.textContent = "Entregue em " + fmtDateBR(deliveredDate) + " · vencia em " + fmtDateBR(due);
       if (delivery.ref && delivery.ref !== ck) {
         dateEl.textContent += " · competência " + monthLabel(delivery.ref);
       }
@@ -1209,7 +1335,8 @@
         sub.obligations.forEach(function (ob) {
           var status = getStatus(ob, today);
           if (status === "on_time" || status === "late") return;
-          var due = dueDateOf(ob.dueDay, today.getFullYear(), today.getMonth());
+          var cycleInfo = getCycleInfo(ob, today);
+          var due = cycleInfo.dueDate;
           var daysUntil = Math.round((due - today) / 86400000);
           var shouldNotify = false;
           var reason = "";
@@ -1219,7 +1346,7 @@
             reason = daysUntil === 0 ? "Vence hoje (" + fmtDateBR(due) + ")." : "Vence em " + daysUntil + " dia" + (daysUntil > 1 ? "s" : "") + " (" + fmtDateBR(due) + ").";
           }
           if (shouldNotify) {
-            var tag = ob.id + "-" + cycleKeyOf(today) + "-" + status;
+            var tag = ob.id + "-" + cycleInfo.cycleKey + "-" + status;
             var key = tag + "-" + todayStr;
             if (force || !notified[key]) {
               sendNotification("📌 " + ob.name, reason + " (" + g.name + " › " + sub.name + ")", tag);
@@ -1235,7 +1362,7 @@
             if (force || !notified[missedKey]) {
               sendNotification(
                 "⚠️ " + ob.name,
-                missedMonthsText(missed) + ": " + missed.map(monthLabel).join(", ") + " (" + g.name + " › " + sub.name + ")",
+                missedMonthsText(ob, missed) + ": " + missed.map(function (ck) { return cycleLabel(ob, ck); }).join(", ") + " (" + g.name + " › " + sub.name + ")",
                 missedTag
               );
               notified[missedKey] = true;

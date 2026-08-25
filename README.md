@@ -14,7 +14,7 @@ App web (PWA) para controlar as obrigações e prazos da rotina de trabalho, com
 ## Funcionalidades
 
 - Abas (ex: Rafas) com subabas (ex: AP Faria, JV, Paulo Sergio).
-- Cada obrigação tem um dia de vencimento mensal recorrente.
+- Cada obrigação pode ser Mensal (dia do mês), Semanal (dia da semana) ou Diária. Mensal tem um campo extra de "competência" ao marcar entrega; semanal e diária não.
 - Cores automáticas:
   - 🟢 Verde: entregue dentro do prazo.
   - 🔴 Vermelho: prazo vencido e ainda não entregue.
