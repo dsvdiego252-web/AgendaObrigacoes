@@ -450,11 +450,12 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-08-25.4";
+  var APP_VERSION = "2026-08-25.5";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
   var NOTIFIED_KEY = "agenda-obrigacoes-notified-v1";
+  var LOCAL_UPDATED_AT_KEY = "agenda-obrigacoes-local-updated-at";
 
   function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
   function pad2(n) { return n < 10 ? "0" + n : "" + n; }
@@ -604,6 +605,7 @@
   }
   function saveData(data) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(Date.now()));
     if (window.__syncHooks && window.__syncHooks.onLocalSave) window.__syncHooks.onLocalSave(data);
   }
 
@@ -614,9 +616,11 @@
   window.__syncHooks = {
     onLocalSave: null,
     getData: function () { return state.data; },
-    applyRemoteData: function (data) {
+    getLocalUpdatedAt: function () { return parseInt(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || "0", 10); },
+    applyRemoteData: function (data, remoteUpdatedAt) {
       state.data = data;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      if (remoteUpdatedAt) localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(remoteUpdatedAt));
       render();
     }
   };
@@ -1672,7 +1676,7 @@
           try {
             var remoteData = JSON.parse(snap.data().payload);
             applyingRemote = true;
-            window.__syncHooks.applyRemoteData(remoteData);
+            window.__syncHooks.applyRemoteData(remoteData, remoteUpdatedAt);
             applyingRemote = false;
             lastKnownUpdatedAt = remoteUpdatedAt;
             setStatus("Sincronizado ✓");
@@ -1698,13 +1702,17 @@
     localStorage.setItem(SYNC_KEY, syncCode);
     var displayEl = document.getElementById("syncCodeDisplay");
     if (displayEl) displayEl.value = syncCode;
+    // Conectar a um código é uma ação explícita de "puxar os dados desse
+    // código" — aqui, diferente da carga inicial, sempre aplica o que
+    // estiver na nuvem (é literalmente o que o usuário pediu).
     getDoc(doc(db, "agendas", syncCode)).then(function (snap) {
       if (snap.exists() && snap.data().payload) {
         try {
+          var remoteUpdatedAt = snap.data().updatedAt || Date.now();
           applyingRemote = true;
-          window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload));
+          window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload), remoteUpdatedAt);
           applyingRemote = false;
-          lastKnownUpdatedAt = snap.data().updatedAt || Date.now();
+          lastKnownUpdatedAt = remoteUpdatedAt;
         } catch (e) {}
         ready = true;
       } else {
@@ -1724,18 +1732,30 @@
   if (db) {
     setStatus("Conectando…");
     getDoc(doc(db, "agendas", syncCode)).then(function (snap) {
-      if (snap.exists() && snap.data().payload) {
+      // Carga inicial (roda a cada vez que a página abre/recarrega): só
+      // aplica o que está na nuvem se for igual ou mais novo que o que já
+      // temos salvo localmente. Sem essa checagem, um recarregamento no meio
+      // de uma sequência de gravações (ex: o próprio app se atualizando
+      // sozinho) podia pegar uma versão da nuvem mais antiga que a local e
+      // fazer entregas recém-marcadas "sumirem" de volta pra atrasado.
+      var localSavedAt = window.__syncHooks.getLocalUpdatedAt();
+      var remoteUpdatedAt = (snap.exists() && snap.data().updatedAt) || 0;
+      var remoteIsNewerOrEqual = snap.exists() && snap.data().payload && remoteUpdatedAt >= localSavedAt;
+      if (remoteIsNewerOrEqual) {
         try {
           applyingRemote = true;
-          window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload));
+          window.__syncHooks.applyRemoteData(JSON.parse(snap.data().payload), remoteUpdatedAt);
           applyingRemote = false;
-          lastKnownUpdatedAt = snap.data().updatedAt || Date.now();
+          lastKnownUpdatedAt = remoteUpdatedAt;
         } catch (e) {}
+      } else {
+        // O que já está salvo neste aparelho é mais novo (ou a nuvem ainda
+        // não tem nada) — mantém o local e sobe ele pra nuvem.
+        lastKnownUpdatedAt = localSavedAt || Date.now();
       }
       ready = true;
       startListening(syncCode);
-      if (!snap.exists()) {
-        lastKnownUpdatedAt = Date.now();
+      if (!remoteIsNewerOrEqual) {
         pushLocalNow(lastKnownUpdatedAt);
       }
       setStatus("Sincronizado ✓");
