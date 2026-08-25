@@ -520,6 +520,16 @@
     return "Vence dia " + ob.dueDay;
   }
 
+  // Linha de vencimento exibida no card/tela de entrega. Só mensal ganha a
+  // data ao lado (varia de mês pra mês); semanal/diária já dizem tudo sozinhas
+  // ("Toda segunda-feira", "Todos os dias") — colar a data ali soava como se a
+  // recorrência fosse num dia fixo específico, o que não é o caso.
+  function dueLineText(ob, due) {
+    var freq = ob.frequency || "monthly";
+    if (freq === "monthly") return frequencyDueText(ob) + " · " + fmtDateBR(due);
+    return frequencyDueText(ob);
+  }
+
   function defaultData() {
     function ob(name, dueDay) { return { id: uid(), name: name, dueDay: dueDay, frequency: "monthly", deliveries: {}, createdCk: cycleKeyOf(todayDate()) }; }
     return {
@@ -948,7 +958,7 @@
     name.textContent = ob.name;
     var dueLine = document.createElement("div");
     dueLine.className = "ob-due";
-    dueLine.textContent = frequencyDueText(ob) + " · " + fmtDateBR(due);
+    dueLine.textContent = dueLineText(ob, due);
     left.appendChild(name);
     left.appendChild(dueLine);
 
@@ -1119,7 +1129,8 @@
     var ck = info.cycleKey;
     var due = info.dueDate;
     var delivery = ob.deliveries[ck];
-    document.getElementById("deliverMonthLabel").textContent = frequencyDueText(ob) + " · " + fmtDateBR(due);
+    document.getElementById("deliverMonthLabel").textContent =
+      (ob.frequency || "monthly") === "monthly" ? frequencyDueText(ob) + " · " + fmtDateBR(due) : "Vencimento desta ocorrência: " + fmtDateBR(due);
 
     var isMonthly = (ob.frequency || "monthly") === "monthly";
     document.getElementById("deliverRefMonthField").style.display = isMonthly ? "block" : "none";
