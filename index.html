@@ -219,6 +219,23 @@
   .history-month { font-size: 14px; font-weight: 600; }
   .history-empty { text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 13.5px; }
 
+  .missed-history-section {
+    background: var(--orange-bg); border: 1px solid rgba(249,115,22,0.35);
+    border-radius: 12px; padding: 12px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .missed-history-title { font-size: 12.5px; font-weight: 700; color: var(--orange); }
+  .missed-history-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    padding: 8px 0; border-top: 1px solid rgba(249,115,22,0.25);
+  }
+  .missed-history-item:first-of-type { border-top: none; padding-top: 0; }
+  .missed-history-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .missed-history-date {
+    background: var(--bg-elev); border: 1px solid var(--card-border); border-radius: 8px;
+    color: var(--text); font-family: inherit; font-size: 13px; padding: 7px 8px;
+  }
+  .missed-history-actions .btn { padding: 7px 11px; font-size: 12.5px; }
+
   .dashboard-grid { display: flex; flex-direction: column; gap: 12px; }
   .dash-card {
     background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius);
@@ -450,7 +467,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-08-25.5";
+  var APP_VERSION = "2026-09-01.1";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1327,9 +1344,64 @@
     document.getElementById("historyTitle").textContent = "Histórico · " + ob.name;
     var listEl = document.getElementById("historyList");
     listEl.innerHTML = "";
+
+    var missed = getMissedPastCycles(ob, todayDate());
+    if (missed.length) {
+      var missedSection = document.createElement("div");
+      missedSection.className = "missed-history-section";
+      var missedTitle = document.createElement("div");
+      missedTitle.className = "missed-history-title";
+      missedTitle.textContent = "⚠️ " + missedMonthsText(ob, missed) + " — confirme ou registre abaixo:";
+      missedSection.appendChild(missedTitle);
+      missed.slice().reverse().forEach(function (ck) {
+        var due = dueDateForCycleKey(ob, ck);
+        var row = document.createElement("div");
+        row.className = "missed-history-item";
+        var left = document.createElement("div");
+        var monthEl = document.createElement("div");
+        monthEl.className = "history-month";
+        monthEl.textContent = cycleLabel(ob, ck);
+        var dueEl = document.createElement("div");
+        dueEl.className = "ob-due";
+        dueEl.textContent = "Venceu em " + fmtDateBR(due);
+        left.appendChild(monthEl);
+        left.appendChild(dueEl);
+
+        var actions = document.createElement("div");
+        actions.className = "missed-history-actions";
+        var dateInput = document.createElement("input");
+        dateInput.type = "date";
+        dateInput.className = "missed-history-date";
+        dateInput.value = toISODate(due);
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "btn primary";
+        saveBtn.textContent = "Registrar";
+        saveBtn.onclick = function () {
+          if (!dateInput.value) { showToast("Escolha uma data"); return; }
+          var record = { date: dateInput.value };
+          if ((ob.frequency || "monthly") === "monthly") record.ref = ck;
+          ob.deliveries[ck] = record;
+          saveData(state.data);
+          render();
+          openHistorySheet(ob);
+          showToast("Entrega registrada");
+        };
+        actions.appendChild(dateInput);
+        actions.appendChild(saveBtn);
+
+        row.appendChild(left);
+        row.appendChild(actions);
+        missedSection.appendChild(row);
+      });
+      listEl.appendChild(missedSection);
+    }
+
     var keys = Object.keys(ob.deliveries).sort(function (a, b) { return b.localeCompare(a); });
     if (!keys.length) {
-      listEl.innerHTML = '<div class="history-empty">Nenhuma entrega registrada ainda. Assim que você marcar uma entrega, ela fica salva aqui mês a mês.</div>';
+      if (!missed.length) {
+        listEl.innerHTML = '<div class="history-empty">Nenhuma entrega registrada ainda. Assim que você marcar uma entrega, ela fica salva aqui mês a mês.</div>';
+      }
       openSheet("sheetHistory");
       return;
     }
