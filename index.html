@@ -119,7 +119,8 @@
   .ob-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .ob-name { font-size: 15.5px; font-weight: 600; line-height: 1.35; }
   .ob-due { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
-  .ob-del-btn { background: none; border: none; color: var(--text-dim); font-size: 16px; padding: 2px 4px; cursor: pointer; }
+  .ob-top-btns { display: flex; align-items: flex-start; gap: 2px; flex: 0 0 auto; }
+  .ob-del-btn, .ob-edit-btn { background: none; border: none; color: var(--text-dim); font-size: 16px; padding: 2px 4px; cursor: pointer; }
 
   .status-badge {
     display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700;
@@ -467,7 +468,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-01.1";
+  var APP_VERSION = "2026-09-02.1";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1064,6 +1065,24 @@
     left.appendChild(name);
     left.appendChild(dueLine);
 
+    var topBtns = document.createElement("div");
+    topBtns.className = "ob-top-btns";
+
+    var editBtn = document.createElement("button");
+    editBtn.className = "ob-edit-btn";
+    editBtn.textContent = "✏️";
+    editBtn.setAttribute("aria-label", "Editar nome da obrigação");
+    editBtn.onclick = function () {
+      var newName = prompt("Novo nome da obrigação:", ob.name);
+      if (newName === null) return;
+      newName = newName.trim();
+      if (!newName) { showToast("Informe um nome"); return; }
+      ob.name = newName;
+      saveData(state.data);
+      render();
+      showToast("Nome atualizado");
+    };
+
     var delBtn = document.createElement("button");
     delBtn.className = "ob-del-btn";
     delBtn.textContent = "🗑️";
@@ -1077,8 +1096,10 @@
       }
     };
 
+    topBtns.appendChild(editBtn);
+    topBtns.appendChild(delBtn);
     top.appendChild(left);
-    top.appendChild(delBtn);
+    top.appendChild(topBtns);
     card.appendChild(top);
 
     var badge = document.createElement("div");
@@ -1202,6 +1223,7 @@
     document.querySelectorAll(".backdrop.open").forEach(function (bd) {
       bd.classList.remove("open");
     });
+    if (pendingReload) window.location.reload();
   });
 
   document.querySelectorAll(".backdrop").forEach(function (bd) {
@@ -1608,9 +1630,17 @@
   // ---------- Service worker ----------
   if ("serviceWorker" in navigator) {
     var swRefreshing = false;
+    var pendingReload = false;
     navigator.serviceWorker.addEventListener("controllerchange", function () {
       if (swRefreshing) return;
       swRefreshing = true;
+      // Se o usuário estiver com alguma tela (nova obrigação, entrega etc.)
+      // aberta preenchendo algo, recarregar agora descartaria o que ele digitou.
+      // Em vez disso, espera a tela fechar (ela dispara "popstate") pra recarregar.
+      if (document.querySelector(".backdrop.open")) {
+        pendingReload = true;
+        return;
+      }
       window.location.reload();
     });
 
