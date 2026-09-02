@@ -80,6 +80,11 @@
   .tab-chip.active { background: var(--accent); border-color: var(--accent); color: white; }
   .tab-chip.add { color: var(--accent); border-style: dashed; }
   .current-group-label { display: flex; align-items: center; font-size: 15.5px; font-weight: 700; color: var(--text); padding: 0 4px; }
+  .freq-group-label {
+    font-size: 12.5px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 18px 2px 10px; padding-top: 4px; border-top: 1px solid var(--card-border);
+  }
+  .freq-group-label:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 
   .subtabs-scroll { display: flex; gap: 6px; overflow-x: auto; padding: 8px 2px 0; scrollbar-width: none; }
   .subtabs-scroll::-webkit-scrollbar { display: none; }
@@ -476,7 +481,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.2";
+  var APP_VERSION = "2026-09-02.3";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1050,9 +1055,33 @@
       return;
     }
 
+    // Quando a subaba mistura frequências diferentes, agrupa a lista em
+    // seções (Diárias / Semanais / Mensais) em vez de intercalar tudo junto —
+    // fica mais fácil de escanear. Se só existir um tipo, não faz sentido
+    // mostrar o cabeçalho da seção sozinho.
+    var FREQ_ORDER = ["daily", "weekly", "monthly"];
+    var FREQ_GROUP_LABEL = { daily: "Diárias", weekly: "Semanais", monthly: "Mensais" };
+    var byFreq = { daily: [], weekly: [], monthly: [] };
     visibleItems.forEach(function (item) {
-      listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
+      byFreq[item.ob.frequency || "monthly"].push(item);
     });
+    var presentFreqs = FREQ_ORDER.filter(function (f) { return byFreq[f].length; });
+
+    if (presentFreqs.length > 1) {
+      presentFreqs.forEach(function (freq) {
+        var header = document.createElement("div");
+        header.className = "freq-group-label";
+        header.textContent = FREQ_GROUP_LABEL[freq] + " (" + byFreq[freq].length + ")";
+        listEl.appendChild(header);
+        byFreq[freq].forEach(function (item) {
+          listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
+        });
+      });
+    } else {
+      visibleItems.forEach(function (item) {
+        listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
+      });
+    }
   }
 
   function escapeHtml(s) {
