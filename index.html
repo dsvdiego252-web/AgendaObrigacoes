@@ -485,7 +485,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.5";
+  var APP_VERSION = "2026-09-02.6";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -619,10 +619,13 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) { var d = defaultData(); migrateData(d); saveData(d); return d; }
       var parsed = JSON.parse(raw);
-      // Persiste (e sobe pra nuvem) se a migração mudou algo, senão a
-      // estrutura nova só existe na memória até o próximo save do usuário —
-      // e nesse meio tempo um dado antigo vindo da nuvem podia sobrescrevê-la.
-      if (migrateData(parsed)) saveData(parsed);
+      // Só migra em memória — NÃO salva/sobe pra nuvem aqui. Isso rodaria
+      // antes da checagem inicial de sincronização (que é assíncrona) resolver,
+      // e podia empurrar uma cópia local desatualizada por cima de edições
+      // mais novas feitas em outro aparelho, apagando-as. A estrutura migrada
+      // já fica correta na tela (applyRemoteData também migra o que vier da
+      // nuvem) e só é salva/enviada de verdade na próxima ação real do usuário.
+      migrateData(parsed);
       return parsed;
     } catch (e) {
       var d2 = defaultData(); migrateData(d2); saveData(d2); return d2;
