@@ -95,6 +95,9 @@
   }
   .subtab-chip.active { background: rgba(59,130,246,0.18); color: #93c5fd; border-color: rgba(59,130,246,0.4); }
   .subtab-chip.add { color: var(--accent); border-style: dashed; border-color: var(--card-border); }
+  .subtabs-scroll.sub2 { padding-top: 6px; }
+  .subtabs-scroll.sub2 .subtab-chip { padding: 5px 11px; font-size: 12.5px; background: transparent; border-color: var(--card-border); }
+  .subtabs-scroll.sub2 .subtab-chip.active { background: rgba(59,130,246,0.14); color: #93c5fd; border-color: rgba(59,130,246,0.35); }
 
   main { padding: 14px 16px calc(90px + var(--safe-bottom)); max-width: 640px; margin: 0 auto; }
 
@@ -316,6 +319,7 @@
   </div>
   <div class="tabs-scroll" id="groupTabs"></div>
   <div class="subtabs-scroll" id="subgroupTabs"></div>
+  <div class="subtabs-scroll sub2" id="subsubgroupTabs"></div>
 </header>
 
 <main id="mainContent">
@@ -481,7 +485,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.3";
+  var APP_VERSION = "2026-09-02.4";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -613,13 +617,43 @@
   function loadData() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) { var d = defaultData(); saveData(d); return d; }
+      if (!raw) { var d = defaultData(); migrateData(d); saveData(d); return d; }
       var parsed = JSON.parse(raw);
       migrateData(parsed);
       return parsed;
     } catch (e) {
-      var d2 = defaultData(); saveData(d2); return d2;
+      var d2 = defaultData(); migrateData(d2); saveData(d2); return d2;
     }
+  }
+  var FREQ_LEAF_NAMES = ["diario", "diária", "semanal", "mensal"];
+  function isFreqLeafName(name) {
+    return FREQ_LEAF_NAMES.indexOf((name || "").trim().toLowerCase()) !== -1;
+  }
+  function makeFreqChildren() {
+    return [
+      { id: uid(), name: "Diario", obligations: [] },
+      { id: uid(), name: "Semanal", obligations: [] },
+      { id: uid(), name: "Mensal", obligations: [] }
+    ];
+  }
+  // Divide uma subaba "achatada" (com obrigações direto nela, ex: uma
+  // empresa como "AP Faria") em 3 subabas-filhas por frequência, migrando as
+  // obrigações existentes pra filha certa. Não mexe em subabas que já são
+  // pastas (já têm filhas) nem em folhas que já são, elas mesmas, uma das
+  // 3 frequências (ex: as subabas "Diario"/"Semanal"/"Mensal" da Isabelle).
+  function splitIntoFreqChildren(node) {
+    if (node.subgroups && node.subgroups.length) return;
+    if (isFreqLeafName(node.name)) return;
+    var byFreq = { daily: [], weekly: [], monthly: [] };
+    (node.obligations || []).forEach(function (ob) {
+      byFreq[ob.frequency || "monthly"].push(ob);
+    });
+    var children = makeFreqChildren();
+    children[0].obligations = byFreq.daily;
+    children[1].obligations = byFreq.weekly;
+    children[2].obligations = byFreq.monthly;
+    node.subgroups = children;
+    delete node.obligations;
   }
   function migrateData(data) {
     // Obrigações salvas antes do campo "createdCk" existir não têm como saber
@@ -627,10 +661,15 @@
     // alertas falsos de "meses anteriores esquecidos" antes de terem existido.
     var thisCk = cycleKeyOf(todayDate());
     data.groups.forEach(function (g) {
-      g.subgroups.forEach(function (sg) {
-        sg.obligations.forEach(function (ob) {
-          if (!ob.createdCk) ob.createdCk = thisCk;
-        });
+      if (!g.subgroups) g.subgroups = [];
+      if (!g.subgroups.length) {
+        // Aba sem nenhuma subaba ainda: cria direto as 3 de frequência nela.
+        g.subgroups = makeFreqChildren();
+      } else {
+        g.subgroups.forEach(function (sg) { splitIntoFreqChildren(sg); });
+      }
+      walkObligations(g, function (ob) {
+        if (!ob.createdCk) ob.createdCk = thisCk;
       });
     });
   }
@@ -684,6 +723,7 @@
     prefs: loadPrefs(),
     activeGroupId: null,
     activeSubgroupId: null,
+    activeSubSubgroupId: null,
     activeStatusFilter: null,
     view: "summary"
   };
@@ -700,6 +740,41 @@
     var g = getActiveGroup();
     if (!g) return null;
     return g.subgroups.find(function (s) { return s.id === state.activeSubgroupId; });
+  }
+  // Uma subaba (ex: "AP Faria") pode por sua vez ter subabas-filhas por
+  // frequência (Diario/Semanal/Mensal) — nesse caso ela é só uma "pasta" e
+  // quem guarda obrigações de verdade é a filha ativa (ou a primeira, por
+  // padrão). Se a subaba não tiver filhas, ela mesma é a folha, como sempre foi.
+  function getActiveLeaf() {
+    var sub = getActiveSubgroup();
+    if (!sub) return null;
+    if (sub.subgroups && sub.subgroups.length) {
+      var leaf = sub.subgroups.find(function (c) { return c.id === state.activeSubSubgroupId; });
+      return leaf || sub.subgroups[0];
+    }
+    return sub;
+  }
+  // Percorre recursivamente as obrigações de um nó (aba ou subaba), seja ele
+  // uma folha (tem .obligations) ou uma pasta (tem .subgroups com outras
+  // subabas dentro) — usado em qualquer lugar que precise somar/checar todas
+  // as obrigações de uma aba inteira, independente da profundidade.
+  function walkObligations(node, cb) {
+    if (node.subgroups && node.subgroups.length) {
+      node.subgroups.forEach(function (child) { walkObligations(child, cb); });
+    } else if (node.obligations) {
+      node.obligations.forEach(function (ob) { cb(ob, node); });
+    }
+  }
+  // Igual a walkObligations, mas também informa o caminho completo de nomes
+  // (aba › subaba › subaba-filha...) até a folha — usado nas notificações,
+  // pra dizer exatamente onde a obrigação está mesmo com subabas aninhadas.
+  function walkObligationsWithPath(node, path, cb) {
+    var here = path.concat([node.name]);
+    if (node.subgroups && node.subgroups.length) {
+      node.subgroups.forEach(function (child) { walkObligationsWithPath(child, here, cb); });
+    } else if (node.obligations) {
+      node.obligations.forEach(function (ob) { cb(ob, node, here); });
+    }
   }
 
   // Obrigações semanais e diárias mostram uma lista com cada ocorrência do
@@ -828,6 +903,7 @@
     document.getElementById("btnAddObligation").style.display = state.view === "summary" ? "none" : "flex";
     if (state.view === "summary") {
       document.getElementById("subgroupTabs").innerHTML = "";
+      document.getElementById("subsubgroupTabs").innerHTML = "";
       renderDashboard();
     } else {
       renderSubgroupTabs();
@@ -870,6 +946,7 @@
     if (!g) return;
     state.activeGroupId = g.id;
     state.activeSubgroupId = g.subgroups.length ? g.subgroups[0].id : null;
+    state.activeSubSubgroupId = null;
     state.activeStatusFilter = null;
     state.view = "main";
     render();
@@ -889,12 +966,10 @@
       var counts = { overdue: 0, due_today: 0, pending: 0, late: 0, on_time: 0 };
       var total = 0;
       var obligationsWithMissedPast = 0;
-      g.subgroups.forEach(function (sg) {
-        sg.obligations.forEach(function (ob) {
-          counts[getStatus(ob, today)]++;
-          total++;
-          if (getMissedPastCycles(ob, today).length) obligationsWithMissedPast++;
-        });
+      walkObligations(g, function (ob) {
+        counts[getStatus(ob, today)]++;
+        total++;
+        if (getMissedPastCycles(ob, today).length) obligationsWithMissedPast++;
       });
       var finished = total > 0 && counts.overdue === 0 && counts.due_today === 0 && counts.pending === 0;
 
@@ -980,14 +1055,21 @@
 
   function renderSubgroupTabs() {
     var el = document.getElementById("subgroupTabs");
+    var el2 = document.getElementById("subsubgroupTabs");
     el.innerHTML = "";
+    el2.innerHTML = "";
     var g = getActiveGroup();
     if (!g) return;
     g.subgroups.forEach(function (s) {
       var chip = document.createElement("button");
       chip.className = "subtab-chip" + (s.id === state.activeSubgroupId ? " active" : "");
       chip.textContent = s.name;
-      chip.onclick = function () { state.activeSubgroupId = s.id; state.activeStatusFilter = null; render(); };
+      chip.onclick = function () {
+        state.activeSubgroupId = s.id;
+        state.activeSubSubgroupId = null;
+        state.activeStatusFilter = null;
+        render();
+      };
       el.appendChild(chip);
     });
     var addChip = document.createElement("button");
@@ -995,6 +1077,22 @@
     addChip.textContent = "＋ subaba";
     addChip.onclick = function () { openGroupSheet("subgroup", null); };
     el.appendChild(addChip);
+
+    // Se a subaba ativa (ex: "AP Faria") tiver filhas por frequência
+    // (Diario/Semanal/Mensal), mostra uma segunda fileira de abas pra
+    // escolher entre elas — só a filha selecionada mostra suas obrigações.
+    var activeSub = getActiveSubgroup();
+    if (activeSub && activeSub.subgroups && activeSub.subgroups.length) {
+      var hasActiveChild = activeSub.subgroups.some(function (c) { return c.id === state.activeSubSubgroupId; });
+      if (!hasActiveChild) state.activeSubSubgroupId = activeSub.subgroups[0].id;
+      activeSub.subgroups.forEach(function (c) {
+        var chip2 = document.createElement("button");
+        chip2.className = "subtab-chip sub2" + (c.id === state.activeSubSubgroupId ? " active" : "");
+        chip2.textContent = c.name;
+        chip2.onclick = function () { state.activeSubSubgroupId = c.id; state.activeStatusFilter = null; render(); };
+        el2.appendChild(chip2);
+      });
+    }
   }
 
   function renderSummaryAndList() {
@@ -1003,7 +1101,7 @@
     summaryEl.innerHTML = "";
     listEl.innerHTML = "";
 
-    var sub = getActiveSubgroup();
+    var sub = getActiveLeaf();
     var today = todayDate();
 
     if (!sub) {
@@ -1288,7 +1386,7 @@
     chip.onclick = function () { setObFreq(chip.getAttribute("data-freq")); };
   });
   document.getElementById("btnAddObligation").onclick = function () {
-    var sub = getActiveSubgroup();
+    var sub = getActiveLeaf();
     if (!sub) { showToast("Crie uma aba e subaba primeiro"); return; }
     document.getElementById("obSheetTitle").textContent = "Nova obrigação em " + sub.name;
     document.getElementById("obName").value = "";
@@ -1299,7 +1397,7 @@
     setTimeout(function () { document.getElementById("obName").focus(); }, 200);
   };
   document.getElementById("btnSaveObligation").onclick = function () {
-    var sub = getActiveSubgroup();
+    var sub = getActiveLeaf();
     if (!sub) return;
     var name = document.getElementById("obName").value.trim();
     if (!name) { showToast("Informe o nome da obrigação"); return; }
@@ -1527,6 +1625,7 @@
       var newSub = { id: uid(), name: name, obligations: [] };
       g.subgroups.push(newSub);
       state.activeSubgroupId = newSub.id;
+      state.activeSubSubgroupId = null;
     }
     saveData(state.data);
     closeSheet("sheetGroup");
@@ -1615,8 +1714,8 @@
     var sentAny = false;
 
     state.data.groups.forEach(function (g) {
-      g.subgroups.forEach(function (sub) {
-        sub.obligations.forEach(function (ob) {
+      walkObligationsWithPath(g, [], function (ob, sub, path) {
+          var pathLabel = path.join(" › ");
           var status = getStatus(ob, today);
           if (status === "on_time" || status === "late") return;
           var due, cycleKeyForTag;
@@ -1642,7 +1741,7 @@
             var tag = ob.id + "-" + cycleKeyForTag + "-" + status;
             var key = tag + "-" + todayStr;
             if (force || !notified[key]) {
-              sendNotification("📌 " + ob.name, reason + " (" + g.name + " › " + sub.name + ")", tag);
+              sendNotification("📌 " + ob.name, reason + " (" + pathLabel + ")", tag);
               notified[key] = true;
               sentAny = true;
             }
@@ -1655,14 +1754,13 @@
             if (force || !notified[missedKey]) {
               sendNotification(
                 "⚠️ " + ob.name,
-                missedMonthsText(ob, missed) + ": " + missed.map(function (ck) { return cycleLabel(ob, ck); }).join(", ") + " (" + g.name + " › " + sub.name + ")",
+                missedMonthsText(ob, missed) + ": " + missed.map(function (ck) { return cycleLabel(ob, ck); }).join(", ") + " (" + pathLabel + ")",
                 missedTag
               );
               notified[missedKey] = true;
               sentAny = true;
             }
           }
-        });
       });
     });
 

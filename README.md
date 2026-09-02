@@ -13,7 +13,7 @@ App web (PWA) para controlar as obrigações e prazos da rotina de trabalho, com
 
 ## Funcionalidades
 
-- Abas (ex: Rafas) com subabas (ex: AP Faria, JV, Paulo Sergio).
+- Abas (ex: Rafas) com subabas (ex: AP Faria, JV, Paulo Sergio). Cada subaba de empresa ganha automaticamente 3 subabas-filhas — Diario, Semanal e Mensal — para separar as obrigações por frequência; quando uma aba ainda não tem nenhuma subaba própria, essas 3 aparecem direto nela.
 - Cada obrigação pode ser Mensal (dia do mês), Semanal (dia da semana) ou Diária. Mensal tem um campo extra de "competência" ao marcar entrega; semanal e diária não.
 - Cores automáticas:
   - 🟢 Verde: entregue dentro do prazo.
