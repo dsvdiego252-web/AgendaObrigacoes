@@ -18,8 +18,9 @@ App web (PWA) para controlar as obrigações e prazos da rotina de trabalho, com
 - Cores automáticas:
   - 🟢 Verde: entregue dentro do prazo.
   - 🔴 Vermelho: prazo vencido e ainda não entregue.
+  - 🟡 Amarelo: vence hoje, ainda não entregue.
   - 🟠 Laranja: entregue, mas após o vencimento.
-  - ⚪ Cinza: ainda dentro do prazo, aguardando entrega.
+  - ⚪ Cinza: ainda dentro do prazo (vence em outro dia), aguardando entrega.
 - Botão "＋ Obrigação" para cadastrar novas obrigações em qualquer subaba.
 - Botões "＋ aba" / "＋ subaba" para organizar outras rotinas além de Rafas.
 - Lembretes locais no celular (dias antes do vencimento, configurável em ⚙️) e aviso diário enquanto uma obrigação estiver atrasada.

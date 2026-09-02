@@ -33,6 +33,8 @@
     --orange-bg: rgba(249,115,22,0.16);
     --gray: #94a3b8;
     --gray-bg: rgba(148,163,184,0.14);
+    --yellow: #eab308;
+    --yellow-bg: rgba(234,179,8,0.16);
     --radius: 14px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -102,6 +104,7 @@
   .summary-pill.red { background: var(--red-bg); color: var(--red); }
   .summary-pill.orange { background: var(--orange-bg); color: var(--orange); }
   .summary-pill.gray { background: var(--gray-bg); color: var(--gray); }
+  .summary-pill.yellow { background: var(--yellow-bg); color: var(--yellow); }
   .summary-pill.active { border-color: currentColor; }
 
   .empty-state { text-align: center; padding: 50px 20px; color: var(--text-dim); }
@@ -115,6 +118,7 @@
   .ob-card.status-overdue { border-left-color: var(--red); }
   .ob-card.status-late { border-left-color: var(--orange); }
   .ob-card.status-pending { border-left-color: var(--gray); }
+  .ob-card.status-due_today { border-left-color: var(--yellow); }
 
   .ob-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .ob-name { font-size: 15.5px; font-weight: 600; line-height: 1.35; }
@@ -130,6 +134,7 @@
   .status-badge.status-overdue { background: var(--red-bg); color: var(--red); }
   .status-badge.status-late { background: var(--orange-bg); color: var(--orange); }
   .status-badge.status-pending { background: var(--gray-bg); color: var(--gray); }
+  .status-badge.status-due_today { background: var(--yellow-bg); color: var(--yellow); }
 
   .missed-warning {
     display: block; width: 100%; text-align: left; margin-top: 8px; padding: 8px 10px;
@@ -263,12 +268,14 @@
   .dash-bar-seg.gray { background: var(--gray); }
   .dash-bar-seg.orange { background: var(--orange); }
   .dash-bar-seg.green { background: var(--green); }
+  .dash-bar-seg.yellow { background: var(--yellow); }
   .dash-stats { display: flex; gap: 14px; flex-wrap: wrap; }
   .dash-stat { font-size: 13px; font-weight: 700; }
   .dash-stat.red { color: var(--red); }
   .dash-stat.gray { color: var(--gray); }
   .dash-stat.orange { color: var(--orange); }
   .dash-stat.green { color: var(--green); }
+  .dash-stat.yellow { color: var(--yellow); }
   .dash-empty { font-size: 13px; color: var(--text-dim); }
   .dash-missed-note { font-size: 12px; font-weight: 600; color: var(--orange); }
 
@@ -292,6 +299,7 @@
   .week-occ-row.status-overdue { border-color: rgba(239,68,68,0.35); } .week-occ-row.status-overdue .week-occ-status { color: var(--red); }
   .week-occ-row.status-late { border-color: rgba(249,115,22,0.35); } .week-occ-row.status-late .week-occ-status { color: var(--orange); }
   .week-occ-row.status-pending .week-occ-status { color: var(--gray); }
+  .week-occ-row.status-due_today { border-color: rgba(234,179,8,0.4); } .week-occ-row.status-due_today .week-occ-status { color: var(--yellow); }
 </style>
 </head>
 <body>
@@ -468,7 +476,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.1";
+  var APP_VERSION = "2026-09-02.2";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -719,7 +727,7 @@
   function getMultiOccurrenceAggregateStatus(ob, today) {
     var occ = getOccurrencesInMonth(ob, today).filter(function (d) { return d.getTime() <= today.getTime(); });
     if (!occ.length) return "pending";
-    var anyOverdue = false, anyPendingToday = false, anyLate = false;
+    var anyOverdue = false, anyDueToday = false, anyLate = false;
     occ.forEach(function (d) {
       var delivery = ob.deliveries[toISODate(d)];
       if (delivery) {
@@ -727,11 +735,11 @@
       } else if (today.getTime() > d.getTime()) {
         anyOverdue = true;
       } else {
-        anyPendingToday = true;
+        anyDueToday = true;
       }
     });
     if (anyOverdue) return "overdue";
-    if (anyPendingToday) return "pending";
+    if (anyDueToday) return "due_today";
     return anyLate ? "late" : "on_time";
   }
 
@@ -758,7 +766,9 @@
       var deliveredDate = parseISODate(delivery.date);
       return deliveredDate.getTime() <= info.dueDate.getTime() ? "on_time" : "late";
     }
-    return today.getTime() > info.dueDate.getTime() ? "overdue" : "pending";
+    if (today.getTime() > info.dueDate.getTime()) return "overdue";
+    if (today.getTime() === info.dueDate.getTime()) return "due_today";
+    return "pending";
   }
 
   // Ciclos passados (meses ou semanas, desde que a obrigação existe) sem
@@ -801,9 +811,10 @@
     on_time: "Entregue no prazo",
     late: "Entregue com atraso",
     overdue: "Atrasada",
+    due_today: "Vence hoje",
     pending: "Pendente"
   };
-  var STATUS_ICON = { on_time: "✅", late: "🟠", overdue: "🔴", pending: "🕒" };
+  var STATUS_ICON = { on_time: "✅", late: "🟠", overdue: "🔴", due_today: "🟡", pending: "🕒" };
 
   // ---------- Render ----------
 
@@ -870,7 +881,7 @@
     wrap.className = "dashboard-grid";
 
     state.data.groups.forEach(function (g) {
-      var counts = { overdue: 0, pending: 0, late: 0, on_time: 0 };
+      var counts = { overdue: 0, due_today: 0, pending: 0, late: 0, on_time: 0 };
       var total = 0;
       var obligationsWithMissedPast = 0;
       g.subgroups.forEach(function (sg) {
@@ -880,7 +891,7 @@
           if (getMissedPastCycles(ob, today).length) obligationsWithMissedPast++;
         });
       });
-      var finished = total > 0 && counts.overdue === 0 && counts.pending === 0;
+      var finished = total > 0 && counts.overdue === 0 && counts.due_today === 0 && counts.pending === 0;
 
       var card = document.createElement("button");
       card.type = "button";
@@ -916,7 +927,7 @@
       } else {
         var bar = document.createElement("div");
         bar.className = "dash-bar";
-        [["overdue", "red"], ["pending", "gray"], ["late", "orange"], ["on_time", "green"]].forEach(function (pair) {
+        [["overdue", "red"], ["due_today", "yellow"], ["pending", "gray"], ["late", "orange"], ["on_time", "green"]].forEach(function (pair) {
           var count = counts[pair[0]];
           if (!count) return;
           var seg = document.createElement("div");
@@ -935,6 +946,7 @@
           return s;
         }
         stats.appendChild(stat("🔴", counts.overdue, "red"));
+        stats.appendChild(stat("🟡", counts.due_today, "yellow"));
         stats.appendChild(stat("🕒", counts.pending, "gray"));
         stats.appendChild(stat("🟠", counts.late, "orange"));
         stats.appendChild(stat("✅", counts.on_time, "green"));
@@ -999,7 +1011,7 @@
       return;
     }
 
-    var counts = { on_time: 0, late: 0, overdue: 0, pending: 0 };
+    var counts = { on_time: 0, late: 0, overdue: 0, due_today: 0, pending: 0 };
     var withStatus = sub.obligations.map(function (ob) {
       var status = getStatus(ob, today);
       counts[status]++;
@@ -1007,7 +1019,7 @@
     });
 
     withStatus.sort(function (a, b) {
-      var order = { overdue: 0, pending: 1, late: 2, on_time: 3 };
+      var order = { overdue: 0, due_today: 1, pending: 2, late: 3, on_time: 4 };
       if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
       return a.due - b.due;
     });
@@ -1024,6 +1036,7 @@
       return d;
     }
     summaryEl.appendChild(pill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
+    summaryEl.appendChild(pill("due_today", "yellow", "🟡", counts.due_today, "vencem hoje"));
     summaryEl.appendChild(pill("pending", "gray", "🕒", counts.pending, "pendentes"));
     summaryEl.appendChild(pill("late", "orange", "🟠", counts.late, "com atraso"));
     summaryEl.appendChild(pill("on_time", "green", "✅", counts.on_time, "entregues"));
@@ -1147,7 +1160,8 @@
           var occDeliveredDate = parseISODate(occDelivery.date);
           occStatus = occDeliveredDate.getTime() <= d.getTime() ? "on_time" : "late";
         } else {
-          occStatus = todayDate().getTime() > d.getTime() ? "overdue" : "pending";
+          var occToday = todayDate().getTime(), occDue = d.getTime();
+          occStatus = occToday > occDue ? "overdue" : (occToday === occDue ? "due_today" : "pending");
         }
         var row = document.createElement("button");
         row.type = "button";
@@ -1591,7 +1605,7 @@
           var shouldNotify = false;
           var reason = "";
           if (status === "overdue") { shouldNotify = true; reason = "Atrasada! Venceu em " + fmtDateBR(due) + "."; }
-          else if (status === "pending" && daysUntil <= state.prefs.reminderDays && daysUntil >= 0) {
+          else if ((status === "pending" || status === "due_today") && daysUntil <= state.prefs.reminderDays && daysUntil >= 0) {
             shouldNotify = true;
             reason = daysUntil === 0 ? "Vence hoje (" + fmtDateBR(due) + ")." : "Vence em " + daysUntil + " dia" + (daysUntil > 1 ? "s" : "") + " (" + fmtDateBR(due) + ").";
           }
