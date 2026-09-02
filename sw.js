@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agenda-obrigacoes-v3';
+const CACHE_NAME = 'agenda-obrigacoes-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -35,6 +35,13 @@ self.addEventListener('activate', (event) => {
 // essa estratégia "network-first".
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Só mexe em pedidos do próprio app (mesma origem). Chamadas de terceiros
+  // (Firebase/Firestore, gstatic etc.) passam direto pela rede sem passar por
+  // esse cache — o Firestore usa uma conexão de streaming de longa duração
+  // pra sincronização em tempo real, e interceptá-la aqui como se fosse um
+  // fetch normal (tentando cachear a resposta) atrapalhava/instabilizava
+  // esse canal, fazendo atualizações de outros aparelhos não chegarem.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request, { cache: 'no-store' })
       .then((response) => {

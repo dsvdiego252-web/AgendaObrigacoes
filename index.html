@@ -467,6 +467,10 @@
       <div class="hint">Use esse código no outro aparelho para juntar os dados dos dois.</div>
     </div>
     <div class="field">
+      <button class="btn ghost full" id="btnForceSync">🔄 Forçar sincronização agora</button>
+      <div class="hint">Busca a versão mais recente salva na nuvem agora mesmo, sem esperar a sincronização automática.</div>
+    </div>
+    <div class="field">
       <label for="syncCodeInput">Conectar a um código de outro aparelho</label>
       <div style="display:flex; gap:8px;">
         <input type="text" id="syncCodeInput" placeholder="Ex: AB12CD" style="flex:1; text-transform:uppercase;" />
@@ -485,7 +489,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.6";
+  var APP_VERSION = "2026-09-02.7";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -2043,6 +2047,12 @@
         connectToCode(codeInput.value);
         codeInput.value = "";
       }
+    }
+    if (e.target && e.target.id === "btnForceSync") {
+      // Puxa o que estiver na nuvem agora, sem esperar a checagem automática
+      // nem depender de comparação de carimbo de tempo — útil quando algo
+      // parece não ter chegado ainda neste aparelho.
+      connectToCode(syncCode);
     }
   });
 </script>
