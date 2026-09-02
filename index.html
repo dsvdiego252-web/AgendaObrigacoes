@@ -485,7 +485,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.4";
+  var APP_VERSION = "2026-09-02.5";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -619,7 +619,10 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) { var d = defaultData(); migrateData(d); saveData(d); return d; }
       var parsed = JSON.parse(raw);
-      migrateData(parsed);
+      // Persiste (e sobe pra nuvem) se a migração mudou algo, senão a
+      // estrutura nova só existe na memória até o próximo save do usuário —
+      // e nesse meio tempo um dado antigo vindo da nuvem podia sobrescrevê-la.
+      if (migrateData(parsed)) saveData(parsed);
       return parsed;
     } catch (e) {
       var d2 = defaultData(); migrateData(d2); saveData(d2); return d2;
@@ -642,8 +645,8 @@
   // pastas (já têm filhas) nem em folhas que já são, elas mesmas, uma das
   // 3 frequências (ex: as subabas "Diario"/"Semanal"/"Mensal" da Isabelle).
   function splitIntoFreqChildren(node) {
-    if (node.subgroups && node.subgroups.length) return;
-    if (isFreqLeafName(node.name)) return;
+    if (node.subgroups && node.subgroups.length) return false;
+    if (isFreqLeafName(node.name)) return false;
     var byFreq = { daily: [], weekly: [], monthly: [] };
     (node.obligations || []).forEach(function (ob) {
       byFreq[ob.frequency || "monthly"].push(ob);
@@ -654,24 +657,30 @@
     children[2].obligations = byFreq.monthly;
     node.subgroups = children;
     delete node.obligations;
+    return true;
   }
+  // Retorna true se mudou alguma coisa na estrutura (pra saber se precisa
+  // persistir/subir pra nuvem de novo).
   function migrateData(data) {
+    var changed = false;
     // Obrigações salvas antes do campo "createdCk" existir não têm como saber
     // quando foram criadas de verdade; assumimos o mês atual pra não gerar
     // alertas falsos de "meses anteriores esquecidos" antes de terem existido.
     var thisCk = cycleKeyOf(todayDate());
     data.groups.forEach(function (g) {
-      if (!g.subgroups) g.subgroups = [];
+      if (!g.subgroups) { g.subgroups = []; changed = true; }
       if (!g.subgroups.length) {
         // Aba sem nenhuma subaba ainda: cria direto as 3 de frequência nela.
         g.subgroups = makeFreqChildren();
+        changed = true;
       } else {
-        g.subgroups.forEach(function (sg) { splitIntoFreqChildren(sg); });
+        g.subgroups.forEach(function (sg) { if (splitIntoFreqChildren(sg)) changed = true; });
       }
       walkObligations(g, function (ob) {
-        if (!ob.createdCk) ob.createdCk = thisCk;
+        if (!ob.createdCk) { ob.createdCk = thisCk; changed = true; }
       });
     });
+    return changed;
   }
   function saveData(data) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -688,6 +697,10 @@
     getData: function () { return state.data; },
     getLocalUpdatedAt: function () { return parseInt(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || "0", 10); },
     applyRemoteData: function (data, remoteUpdatedAt) {
+      // Dado vindo da nuvem pode ter sido salvo antes de alguma migração de
+      // estrutura existir (ex: as subabas por frequência) — migra sempre,
+      // senão a tela mostra a estrutura antiga até o próximo save local.
+      migrateData(data);
       state.data = data;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       if (remoteUpdatedAt) localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(remoteUpdatedAt));
