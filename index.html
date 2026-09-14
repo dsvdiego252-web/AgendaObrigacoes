@@ -101,6 +101,13 @@
 
   main { padding: 14px 16px calc(90px + var(--safe-bottom)); max-width: 640px; margin: 0 auto; }
 
+  .delivery-summary-row {
+    display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; padding: 10px;
+    background: var(--bg-elev); border: 1px solid var(--card-border); border-radius: 12px;
+  }
+  .delivery-summary-row:empty { display: none; margin: 0; padding: 0; border: none; }
+  .delivery-summary-row .summary-pill { font-size: 13.5px; padding: 7px 12px; }
+
   .summary-row { display: flex; gap: 8px; margin: 6px 0 16px; flex-wrap: wrap; }
   .summary-pill {
     font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px;
@@ -324,6 +331,7 @@
 
 <main id="mainContent">
   <div id="installBanner"></div>
+  <div id="deliverySummaryRow" class="delivery-summary-row"></div>
   <div id="summaryRow" class="summary-row"></div>
   <div id="obligationsList"></div>
 </main>
@@ -489,7 +497,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-14.2";
+  var APP_VERSION = "2026-09-14.3";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -973,8 +981,10 @@
   }
 
   function renderDashboard() {
+    var deliveryEl = document.getElementById("deliverySummaryRow");
     var summaryEl = document.getElementById("summaryRow");
     var listEl = document.getElementById("obligationsList");
+    deliveryEl.innerHTML = "";
     summaryEl.innerHTML = "";
     listEl.innerHTML = "";
 
@@ -1116,8 +1126,10 @@
   }
 
   function renderSummaryAndList() {
+    var deliveryEl = document.getElementById("deliverySummaryRow");
     var summaryEl = document.getElementById("summaryRow");
     var listEl = document.getElementById("obligationsList");
+    deliveryEl.innerHTML = "";
     summaryEl.innerHTML = "";
     listEl.innerHTML = "";
 
@@ -1168,8 +1180,8 @@
       };
       return d;
     }
-    summaryEl.appendChild(pill("falta", "gray", "📋", faltaCount, "falta entregar"));
-    summaryEl.appendChild(pill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
+    deliveryEl.appendChild(pill("falta", "gray", "📋", faltaCount, "falta entregar"));
+    deliveryEl.appendChild(pill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
     summaryEl.appendChild(pill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
     summaryEl.appendChild(pill("due_today", "yellow", "🟡", counts.due_today, "vencem hoje"));
     summaryEl.appendChild(pill("pending", "gray", "🕒", counts.pending, "pendentes"));
