@@ -489,7 +489,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-02.7";
+  var APP_VERSION = "2026-09-14.1";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1185,20 +1185,46 @@
     });
     var presentFreqs = FREQ_ORDER.filter(function (f) { return byFreq[f].length; });
 
+    // Dentro de cada seção (ou da lista toda, se só tiver uma frequência),
+    // separa ainda o que falta entregar do que já foi entregue — de novo só
+    // mostra os dois cabeçalhos quando os dois grupos têm algo, senão é
+    // cabeçalho redundante.
+    var DELIVERY_ORDER = ["falta", "entregue"];
+    var DELIVERY_GROUP_LABEL = { falta: "Falta entregar", entregue: "Entregues" };
+    function deliveryBucket(status) {
+      return (status === "late" || status === "on_time") ? "entregue" : "falta";
+    }
+    function appendGroupedByDelivery(items) {
+      var byDelivery = { falta: [], entregue: [] };
+      items.forEach(function (item) { byDelivery[deliveryBucket(item.status)].push(item); });
+      var presentDelivery = DELIVERY_ORDER.filter(function (k) { return byDelivery[k].length; });
+      if (presentDelivery.length > 1) {
+        presentDelivery.forEach(function (k) {
+          var subHeader = document.createElement("div");
+          subHeader.className = "freq-group-label";
+          subHeader.textContent = DELIVERY_GROUP_LABEL[k] + " (" + byDelivery[k].length + ")";
+          listEl.appendChild(subHeader);
+          byDelivery[k].forEach(function (item) {
+            listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
+          });
+        });
+      } else {
+        items.forEach(function (item) {
+          listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
+        });
+      }
+    }
+
     if (presentFreqs.length > 1) {
       presentFreqs.forEach(function (freq) {
         var header = document.createElement("div");
         header.className = "freq-group-label";
         header.textContent = FREQ_GROUP_LABEL[freq] + " (" + byFreq[freq].length + ")";
         listEl.appendChild(header);
-        byFreq[freq].forEach(function (item) {
-          listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
-        });
+        appendGroupedByDelivery(byFreq[freq]);
       });
     } else {
-      visibleItems.forEach(function (item) {
-        listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
-      });
+      appendGroupedByDelivery(visibleItems);
     }
   }
 
