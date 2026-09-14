@@ -489,7 +489,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-14.1";
+  var APP_VERSION = "2026-09-14.2";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1147,6 +1147,16 @@
       return a.due - b.due;
     });
 
+    // "falta"/"entregue" são um filtro combinado (agrupa vários status de
+    // uma vez) — igual aos filtros de status individuais, mas cobrindo
+    // "ainda não entreguei nada disso" vs. "já entreguei, no prazo ou não".
+    function deliveryBucket(status) {
+      return (status === "late" || status === "on_time") ? "entregue" : "falta";
+    }
+    var DELIVERY_LABEL = { falta: "Falta entregar", entregue: "Entregues" };
+    var faltaCount = counts.overdue + counts.due_today + counts.pending;
+    var entregueCount = counts.late + counts.on_time;
+
     function pill(status, cls, icon, count, label) {
       var d = document.createElement("button");
       d.type = "button";
@@ -1158,18 +1168,24 @@
       };
       return d;
     }
+    summaryEl.appendChild(pill("falta", "gray", "📋", faltaCount, "falta entregar"));
+    summaryEl.appendChild(pill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
     summaryEl.appendChild(pill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
     summaryEl.appendChild(pill("due_today", "yellow", "🟡", counts.due_today, "vencem hoje"));
     summaryEl.appendChild(pill("pending", "gray", "🕒", counts.pending, "pendentes"));
     summaryEl.appendChild(pill("late", "orange", "🟠", counts.late, "com atraso"));
-    summaryEl.appendChild(pill("on_time", "green", "✅", counts.on_time, "entregues"));
+    summaryEl.appendChild(pill("on_time", "green", "✅", counts.on_time, "no prazo"));
 
-    var visibleItems = state.activeStatusFilter
-      ? withStatus.filter(function (item) { return item.status === state.activeStatusFilter; })
-      : withStatus;
+    var isDeliveryFilter = state.activeStatusFilter === "falta" || state.activeStatusFilter === "entregue";
+    var visibleItems = !state.activeStatusFilter
+      ? withStatus
+      : isDeliveryFilter
+        ? withStatus.filter(function (item) { return deliveryBucket(item.status) === state.activeStatusFilter; })
+        : withStatus.filter(function (item) { return item.status === state.activeStatusFilter; });
 
     if (!visibleItems.length) {
-      listEl.innerHTML = '<div class="empty-state"><div class="big">🔎</div>Nenhuma obrigação com status "' + STATUS_LABEL[state.activeStatusFilter] + '" no momento.</div>';
+      var emptyLabel = isDeliveryFilter ? DELIVERY_LABEL[state.activeStatusFilter] : STATUS_LABEL[state.activeStatusFilter];
+      listEl.innerHTML = '<div class="empty-state"><div class="big">🔎</div>Nenhuma obrigação com status "' + emptyLabel + '" no momento.</div>';
       return;
     }
 
@@ -1188,12 +1204,9 @@
     // Dentro de cada seção (ou da lista toda, se só tiver uma frequência),
     // separa ainda o que falta entregar do que já foi entregue — de novo só
     // mostra os dois cabeçalhos quando os dois grupos têm algo, senão é
-    // cabeçalho redundante.
+    // cabeçalho redundante (isso já não acontece quando o filtro "falta
+    // entregar"/"entregues" acima está ativo, já que aí só sobra um grupo).
     var DELIVERY_ORDER = ["falta", "entregue"];
-    var DELIVERY_GROUP_LABEL = { falta: "Falta entregar", entregue: "Entregues" };
-    function deliveryBucket(status) {
-      return (status === "late" || status === "on_time") ? "entregue" : "falta";
-    }
     function appendGroupedByDelivery(items) {
       var byDelivery = { falta: [], entregue: [] };
       items.forEach(function (item) { byDelivery[deliveryBucket(item.status)].push(item); });
@@ -1202,7 +1215,7 @@
         presentDelivery.forEach(function (k) {
           var subHeader = document.createElement("div");
           subHeader.className = "freq-group-label";
-          subHeader.textContent = DELIVERY_GROUP_LABEL[k] + " (" + byDelivery[k].length + ")";
+          subHeader.textContent = DELIVERY_LABEL[k] + " (" + byDelivery[k].length + ")";
           listEl.appendChild(subHeader);
           byDelivery[k].forEach(function (item) {
             listEl.appendChild(buildObligationCard(item.ob, item.status, item.due, sub));
