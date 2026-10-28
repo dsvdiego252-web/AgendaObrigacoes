@@ -102,11 +102,13 @@
   main { padding: 14px 16px calc(90px + var(--safe-bottom)); max-width: 640px; margin: 0 auto; }
 
   .delivery-summary-row {
-    display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; padding: 10px;
+    display: flex; flex-direction: column; gap: 8px; margin: 6px 0; padding: 10px;
     background: var(--bg-elev); border: 1px solid var(--card-border); border-radius: 12px;
   }
   .delivery-summary-row:empty { display: none; margin: 0; padding: 0; border: none; }
-  .delivery-summary-row .summary-pill { font-size: 13.5px; padding: 7px 12px; }
+  .delivery-total-label { font-size: 12.5px; font-weight: 700; color: var(--text-dim); }
+  .delivery-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .delivery-pills .summary-pill { font-size: 13.5px; padding: 7px 12px; }
 
   .summary-row { display: flex; gap: 8px; margin: 6px 0 16px; flex-wrap: wrap; }
   .summary-pill {
@@ -497,7 +499,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-10-28.1";
+  var APP_VERSION = "2026-10-28.2";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1203,8 +1205,16 @@
         renderSummaryAndList();
       });
     }
-    deliveryEl.appendChild(deliveryPill("falta", "gray", "📋", faltaCount, "falta entregar"));
-    deliveryEl.appendChild(deliveryPill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
+    var totalLabel = document.createElement("div");
+    totalLabel.className = "delivery-total-label";
+    totalLabel.textContent = withStatus.length + " obrigaç" + (withStatus.length === 1 ? "ão" : "ões") + " no total";
+    deliveryEl.appendChild(totalLabel);
+
+    var pillsWrap = document.createElement("div");
+    pillsWrap.className = "delivery-pills";
+    pillsWrap.appendChild(deliveryPill("falta", "gray", "📋", faltaCount, "falta entregar"));
+    pillsWrap.appendChild(deliveryPill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
+    deliveryEl.appendChild(pillsWrap);
 
     if (state.activeDeliveryFilter === "falta") {
       summaryEl.appendChild(statusPill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
