@@ -497,7 +497,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-09-14.3";
+  var APP_VERSION = "2026-10-28.1";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -753,6 +753,7 @@
     activeSubgroupId: null,
     activeSubSubgroupId: null,
     activeStatusFilter: null,
+    activeDeliveryFilter: null,
     view: "summary"
   };
   if (state.data.groups.length) {
@@ -956,6 +957,7 @@
     backChip.onclick = function () {
       state.view = "summary";
       state.activeStatusFilter = null;
+      state.activeDeliveryFilter = null;
       render();
     };
     el.appendChild(backChip);
@@ -976,6 +978,7 @@
     state.activeSubgroupId = g.subgroups.length ? g.subgroups[0].id : null;
     state.activeSubSubgroupId = null;
     state.activeStatusFilter = null;
+    state.activeDeliveryFilter = null;
     state.view = "main";
     render();
   }
@@ -1098,6 +1101,7 @@
         state.activeSubgroupId = s.id;
         state.activeSubSubgroupId = null;
         state.activeStatusFilter = null;
+        state.activeDeliveryFilter = null;
         render();
       };
       el.appendChild(chip);
@@ -1119,7 +1123,12 @@
         var chip2 = document.createElement("button");
         chip2.className = "subtab-chip sub2" + (c.id === state.activeSubSubgroupId ? " active" : "");
         chip2.textContent = c.name;
-        chip2.onclick = function () { state.activeSubSubgroupId = c.id; state.activeStatusFilter = null; render(); };
+        chip2.onclick = function () {
+          state.activeSubSubgroupId = c.id;
+          state.activeStatusFilter = null;
+          state.activeDeliveryFilter = null;
+          render();
+        };
         el2.appendChild(chip2);
       });
     }
@@ -1162,6 +1171,10 @@
     // "falta"/"entregue" são um filtro combinado (agrupa vários status de
     // uma vez) — igual aos filtros de status individuais, mas cobrindo
     // "ainda não entreguei nada disso" vs. "já entreguei, no prazo ou não".
+    // Os status detalhados (atrasada, vence hoje, pendente / com atraso, no
+    // prazo) só aparecem depois que um desses dois é escolhido — e mostram
+    // só os que fazem parte do grupo selecionado — pra não poluir a tela
+    // com todas as pílulas de uma vez.
     function deliveryBucket(status) {
       return (status === "late" || status === "on_time") ? "entregue" : "falta";
     }
@@ -1169,34 +1182,49 @@
     var faltaCount = counts.overdue + counts.due_today + counts.pending;
     var entregueCount = counts.late + counts.on_time;
 
-    function pill(status, cls, icon, count, label) {
+    function pill(status, cls, icon, count, label, active, onclick) {
       var d = document.createElement("button");
       d.type = "button";
-      d.className = "summary-pill " + cls + (state.activeStatusFilter === status ? " active" : "");
+      d.className = "summary-pill " + cls + (active ? " active" : "");
       d.innerHTML = icon + ' <span class="n">' + count + "</span> " + label;
-      d.onclick = function () {
-        state.activeStatusFilter = state.activeStatusFilter === status ? null : status;
-        renderSummaryAndList();
-      };
+      d.onclick = onclick;
       return d;
     }
-    deliveryEl.appendChild(pill("falta", "gray", "📋", faltaCount, "falta entregar"));
-    deliveryEl.appendChild(pill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
-    summaryEl.appendChild(pill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
-    summaryEl.appendChild(pill("due_today", "yellow", "🟡", counts.due_today, "vencem hoje"));
-    summaryEl.appendChild(pill("pending", "gray", "🕒", counts.pending, "pendentes"));
-    summaryEl.appendChild(pill("late", "orange", "🟠", counts.late, "com atraso"));
-    summaryEl.appendChild(pill("on_time", "green", "✅", counts.on_time, "no prazo"));
+    function deliveryPill(bucket, cls, icon, count, label) {
+      return pill(bucket, cls, icon, count, label, state.activeDeliveryFilter === bucket, function () {
+        state.activeDeliveryFilter = state.activeDeliveryFilter === bucket ? null : bucket;
+        state.activeStatusFilter = null;
+        renderSummaryAndList();
+      });
+    }
+    function statusPill(status, cls, icon, count, label) {
+      return pill(status, cls, icon, count, label, state.activeStatusFilter === status, function () {
+        state.activeStatusFilter = state.activeStatusFilter === status ? null : status;
+        renderSummaryAndList();
+      });
+    }
+    deliveryEl.appendChild(deliveryPill("falta", "gray", "📋", faltaCount, "falta entregar"));
+    deliveryEl.appendChild(deliveryPill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
 
-    var isDeliveryFilter = state.activeStatusFilter === "falta" || state.activeStatusFilter === "entregue";
-    var visibleItems = !state.activeStatusFilter
-      ? withStatus
-      : isDeliveryFilter
-        ? withStatus.filter(function (item) { return deliveryBucket(item.status) === state.activeStatusFilter; })
-        : withStatus.filter(function (item) { return item.status === state.activeStatusFilter; });
+    if (state.activeDeliveryFilter === "falta") {
+      summaryEl.appendChild(statusPill("overdue", "red", "🔴", counts.overdue, "atrasadas"));
+      summaryEl.appendChild(statusPill("due_today", "yellow", "🟡", counts.due_today, "vencem hoje"));
+      summaryEl.appendChild(statusPill("pending", "gray", "🕒", counts.pending, "pendentes"));
+    } else if (state.activeDeliveryFilter === "entregue") {
+      summaryEl.appendChild(statusPill("late", "orange", "🟠", counts.late, "com atraso"));
+      summaryEl.appendChild(statusPill("on_time", "green", "✅", counts.on_time, "no prazo"));
+    }
+
+    var visibleItems = withStatus;
+    if (state.activeDeliveryFilter) {
+      visibleItems = visibleItems.filter(function (item) { return deliveryBucket(item.status) === state.activeDeliveryFilter; });
+      if (state.activeStatusFilter) {
+        visibleItems = visibleItems.filter(function (item) { return item.status === state.activeStatusFilter; });
+      }
+    }
 
     if (!visibleItems.length) {
-      var emptyLabel = isDeliveryFilter ? DELIVERY_LABEL[state.activeStatusFilter] : STATUS_LABEL[state.activeStatusFilter];
+      var emptyLabel = state.activeStatusFilter ? STATUS_LABEL[state.activeStatusFilter] : DELIVERY_LABEL[state.activeDeliveryFilter];
       listEl.innerHTML = '<div class="empty-state"><div class="big">🔎</div>Nenhuma obrigação com status "' + emptyLabel + '" no momento.</div>';
       return;
     }
