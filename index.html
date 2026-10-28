@@ -499,7 +499,7 @@
 (function () {
   "use strict";
 
-  var APP_VERSION = "2026-10-28.2";
+  var APP_VERSION = "2026-10-28.3";
 
   var STORAGE_KEY = "agenda-obrigacoes-data-v1";
   var PREFS_KEY = "agenda-obrigacoes-prefs-v1";
@@ -1213,7 +1213,10 @@
     var pillsWrap = document.createElement("div");
     pillsWrap.className = "delivery-pills";
     pillsWrap.appendChild(deliveryPill("falta", "gray", "📋", faltaCount, "falta entregar"));
-    pillsWrap.appendChild(deliveryPill("entregue", "green", "✅", entregueCount, "entregues (todas)"));
+    // "(todas)" só faz sentido quando realmente entregou tudo (nada mais em
+    // "falta entregar") — senão soa como se já tivesse terminado sem ter.
+    var entregueLabel = faltaCount === 0 ? "entregues (todas)" : "entregues";
+    pillsWrap.appendChild(deliveryPill("entregue", "green", "✅", entregueCount, entregueLabel));
     deliveryEl.appendChild(pillsWrap);
 
     if (state.activeDeliveryFilter === "falta") {
